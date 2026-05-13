@@ -59,7 +59,7 @@ jobs:
         run: npx electron-builder --config electron-builder.json --publish never
 
       - name: Upload installers
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: openpi-${{ matrix.name }}-${{ github.ref_name }}
           path: |
@@ -82,7 +82,7 @@ jobs:
         run: node scripts/extract-release-notes.mjs "${{ github.ref_name }}" release-notes.generated.md
 
       - name: Download installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: dist-artifacts
           merge-multiple: true

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Release artifact actions** — Beta release artifact upload/download steps use current GitHub action major versions to avoid Node 20 runtime deprecation warnings on future release runs.
+
 ## [0.1.5] - 2026-05-13
 
 OpenPi v0.1.5 fixes the packaged-app file mention fallback path and hardens release automation so GitHub Releases always publish current changelog content.
