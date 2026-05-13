@@ -1,0 +1,410 @@
+# OpenPi Roadmap
+
+OpenPi is a native desktop workbench for the Pi coding agent. The goal: make Pi sessions visible, steerable, and safe in a local-first Electron app — not clone Warp, not replace VS Code.
+
+**North star UI reference:** sessions sidebar grouped by workspace (token/cost badges, timestamps) + agent conversation with model selector + customizations panel (modal with AI wizard, Extensions/Skills/Prompts/Themes/Packages) + OpenCode-style command palette (`⇧⌘P`) + persistent Git source control panel (live file changes, M/A/D badges, commit button) + split-pane inline diff viewer (side-by-side, syntax-highlighted, N of M navigation). That's the product.
+
+---
+
+## Current Status (May 2026 beta)
+
+Done so far:
+- Electron shell with secure preload bridge, Zod-backed IPC contracts, sandboxed renderer, and main-owned authority for filesystem, PTY, Git, and app metadata.
+- SolidJS workbench UI with session sidebar, workspace rail, conversation pane, model controls, steering/follow-up queues, command palette, customizations modal, terminal/output panel, Git panel, file tree/search, file viewer, and split diff viewer.
+- Session/workspace read model in SQLite, last-workspace restore, session search/sort/group controls, pinned/archive flows, and new-session hero metadata (workspace path, Git branch, last modified).
+- Customizations inventory for Extensions, Skills, Prompts, Themes, Packages, Settings, General preferences, and Keybindings; command palette is now a first-class keybinding (`Shift+Cmd+P`).
+- Runtime OpenPi branding: app name/version comes from Electron main (`app.getVersion()`), Welcome/customizations surfaces share the same metadata, and Electron runtime/build icons point at the OpenPi icon set.
+- CI/CD baseline: PR/main verification workflow and tag-triggered beta release workflow that packages macOS, Windows, and Linux installers as draft prereleases.
+
+Still beta-blocking:
+- macOS signing/notarization secrets and verified Windows signing are not configured yet.
+- Permission gates, protected paths, workspace trust, and keychain-backed provider secrets remain Phase 6 hardening work.
+- Full lint/test health must stay green in CI before broad beta distribution.
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────┐
+│ SolidJS Renderer                                 │
+│  sessions sidebar · conversation · customizations│
+│  command palette · terminal · diff panel · settings│
+│  xterm.js · Solid signals/memos · Zod            │
+└──────────────────┬───────────────────────────────┘
+                   │ contextBridge (preload)
+┌──────────────────▼───────────────────────────────┐
+│ Electron Main                                    │
+│  app/window lifecycle · secure IPC routing       │
+│  Pi SDK session host · node-pty PTY bridge       │
+│  permission orchestration · Git read/stage/commit │
+│  SQLite read-model (session index, workspaces)   │
+└──────────────────────────────────────────────────┘
+            │ SDK import (same process)
+┌───────────▼──────────────────────────────────────┐
+│ Pi SDK (@earendil-works/pi-coding-agent)         │
+│  AgentSession · SessionManager · ResourceLoader  │
+│  AuthStorage · ModelRegistry · extensions        │
+│  tools · compaction · session tree (JSONL v3)    │
+└──────────────────────────────────────────────────┘
+```
+
+**Key authority split:**
+- **Renderer**: render state, collect intent. No Node access. No Pi imports.
+- **Electron main**: IPC routing, app lifecycle, PTY, Pi SDK session host, Git read/stage/commit, SQLite, permission gates.
+- **Pi SDK** (in Electron main): agent loop, session tree, tools, extensions, compaction, models. Not reimplemented. Not wrapped in a separate process for MVP.
+
+**Why SDK in Electron main (not subprocess RPC):** Pi's own docs say "if you're building a Node.js application, consider using AgentSession directly." We are. Type-safe, zero framing overhead, full access to `AgentSessionEvent` types. Switch to subprocess isolation if resource/security pressure demands it later.
+
+---
+
+## Stack
+
+| Layer | Choice |
+|---|---|
+| Shell | Electron + electron-vite + electron-builder |
+| Renderer | React + TypeScript + Vite |
+| Styling | Tailwind CSS + Radix UI/shadcn/ui + Lucide |
+| State | TanStack Query (server state) + Zustand (UI state) |
+| Validation | Zod at every IPC boundary |
+| Terminal | xterm.js + node-pty in main |
+| Diff | @pierre/diffs (replaceable renderer only) |
+| Pi integration | @earendil-works/pi-coding-agent SDK (direct import in main) |
+| Persistence | SQLite via better-sqlite3 in main process |
+| Secrets | OS keychain via keytar / safeStorage |
+
+---
+
+## Pi Integration Reality (v0.74.0)
+
+These facts must drive implementation. Do not guess or approximate.
+
+### SDK primary path
+```typescript
+import { createAgentSession, SessionManager, AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+const { session } = await createAgentSession({ sessionManager: SessionManager.create(cwd) });
+session.subscribe((event) => { /* AgentSessionEvent stream */ });
+await session.prompt("...");
+```
+
+### Session format (JSONL v3 tree)
+- Stored at `~/.pi/agent/sessions/<path-slug>_<name>.jsonl`
+- Each line: `SessionEntry` with `type`, `id` (8-char hex), `parentId`, `timestamp`
+- Entry types: `session` (header), `message`, `model_change`, `thinking_level_change`, `compaction`, `branch_summary`, `custom`, `custom_message`, `label`, `session_info`
+- Tree structure: `parentId: null` = root; branching = new children from earlier entry
+- `SessionManager.list(cwd)` — sessions for a directory
+- `SessionManager.listAll()` — all sessions across all projects
+
+### Event types
+`agent_start`, `agent_end`, `turn_start`, `turn_end`, `message_start`, `message_update` (with `assistantMessageEvent` deltas), `message_end`, `tool_execution_start`, `tool_execution_update`, `tool_execution_end`, `queue_update`, `compaction_start`, `compaction_end`, `auto_retry_start`, `auto_retry_end`, `extension_error`
+
+### Message queue semantics
+- `session.steer(text)` — delivered after current tool calls complete, before next LLM call
+- `session.followUp(text)` — delivered only when agent fully stops
+- `session.abort()` — cancel current run
+- `queue_update` event streams pending steering/followUp arrays
+
+### What Pi does NOT have built-in
+Pi intentionally has no: sub-agents, MCP, permission gates, plan mode, background bash. All are buildable via extensions. OpenPi must not assume these exist and must not fake them in the Pi layer.
+
+### Customizations (Pi's real names)
+| OpenPi UI label | Pi concept | Discovery path |
+|---|---|---|
+| Extensions | Extensions (TypeScript modules) | `~/.pi/agent/extensions/`, `.pi/extensions/` |
+| Skills | Skills (SKILL.md markdown) | `~/.pi/agent/skills/`, `.pi/skills/` |
+| Prompts | Prompt Templates (.md files) | `~/.pi/agent/prompts/`, `.pi/prompts/` |
+| Themes | Themes | `~/.pi/agent/themes/`, `.pi/themes/` |
+| Packages | Pi Packages (npm/git) | `settings.json` packages array |
+
+### Extension security
+Extensions are TypeScript modules that run with **full system permissions**. They can execute arbitrary code, call any Node API, and make network requests. Treat them like executable code — show provenance, require workspace trust, never silently install third-party packages.
+
+### Session stats (from `get_session_stats` RPC / `session.agent.state`)
+Token input/output/cacheRead/cacheWrite, cost, contextUsage (tokens, contextWindow, percent). These drive the token badges visible in the session list.
+
+---
+
+## Product Principles
+
+1. **Sessions are trees, not flat chats.** Visualize parentId links, branches, compactions, labels, model changes.
+2. **Renderer renders; main decides.** Permission gates, patch authority, secrets, SQLite — all in main.
+3. **Preserve Pi queue semantics.** Steering, follow-up, abort are first-class UX concepts.
+4. **Customizations are first-class.** Users need to see, manage, and trust their extensions/skills/packages.
+5. **Local-first.** Works offline. No cloud sync required.
+6. **Extensions are dangerous.** Provenance before enablement. Never silent install.
+7. **Terminal and agent modes are distinct.** Shell terminal ≠ implicit Pi control surface.
+
+---
+
+## Electron Security Baseline (mandatory, not optional)
+
+- `contextIsolation: true`
+- `nodeIntegration: false` in renderer
+- `sandbox: true` where practical
+- Narrow preload surface with explicit Zod-validated allowlist
+- IPC sender validation for all privileged handlers
+- Strict CSP
+- No renderer access to Node built-ins
+
+---
+
+## Phase 0 — Electron Shell + Pi SDK Bridge
+
+**Goal:** prove the Electron shell can host a Pi session and stream events to the renderer safely.
+
+Build:
+- Electron + React + Vite + Tailwind app shell
+- Secure preload bridge with typed, Zod-validated IPC channel map
+- `SessionHost` in Electron main: creates Pi `AgentSession`, pipes `AgentSessionEvent` stream to renderer via IPC, handles prompt/steer/followUp/abort commands
+- Basic agent conversation view: streaming text, thinking blocks, tool execution cards (name + expandable output)
+- Model selector using `ModelRegistry.getAvailable()`
+- Token/cost display from `turn_end` usage events
+- Abort button wired to `session.abort()`
+- Workspace folder picker (uses `cwd` for Pi session)
+
+Acceptance criteria:
+- User picks a folder, sends a prompt, sees streamed assistant response
+- Tool calls appear as cards (name, collapsible output)
+- Token usage and cost update after each turn
+- User can abort a running turn
+- Worker crash or SDK throw does not crash the app
+- Renderer has zero access to Node APIs
+- Every IPC payload is Zod-validated at receive
+
+Out of scope: session persistence, session list, customizations, terminal.
+
+---
+
+## Phase 1 — Workspace + Session Tree Browser
+
+**Goal:** build the sessions sidebar shown in the reference UI — workspace-grouped, with token badges, session names, timestamps.
+
+Build:
+- Workspace model in SQLite (Electron main): canonical resolved path, display name, last opened
+- Recent workspaces list + open new folder flow
+- Session index read-model in SQLite: scan `~/.pi/agent/sessions/`, extract header + last session_info + total tokens/cost + last message timestamp, upsert by session file path
+- Session list sidebar: workspace sections, session names (from `session_info` entries or first user message), token/cost badge, relative timestamp, active indicator
+- Resume existing session via `SessionManager.open(path)`
+- New session in current workspace
+- **Session list filter/sort popover** (triggered from `≡` icon in sessions header):
+  - Sort by Created (default, checkmarked) / Sort by Updated
+  - Group by Workspace (default, checkmarked) / Group by Time
+  - Show Recent Sessions (default) / Show All Sessions
+  - Collapse All Groups
+- Session search/filter by name
+- Git branch detection for active workspace (read-only, no staging)
+
+Acceptance criteria:
+- App reopens last workspace and its sessions on restart
+- Session list groups by workspace (default), with toggle to group by time
+- Sort by Created and Sort by Updated both work correctly
+- "Show Recent Sessions" filters to sessions from the last N days; "Show All Sessions" shows the full list
+- "Collapse All Groups" folds all workspace sections
+- Token/cost badges match Pi's own session stats
+- Duplicate/symlinked workspace paths do not create identity conflicts
+- Resuming a session restores the correct session file and continues the tree
+- Session tree structure is NOT flattened — parentId links are preserved in SQLite index for later tree view
+
+---
+
+## Phase 2 — Customizations Panel
+
+**Goal:** surface Pi's extensibility model (extensions, skills, prompts, themes, packages) with provenance, trust controls, and first-class resource creation.
+
+Build:
+- **Customizations modal/overlay** with sidebar nav: Extensions, Skills, Prompts, Themes, Packages — full-panel design with sidebar navigation
+- Sidebar shows count badges per resource type
+- **Model selector** at the top of the panel (shows active provider/model, allows switching within the panel)
+- **AI generation wizard**: natural-language description input at top (e.g. "Prefer concise commits, thorough reviews, and tested code") → auto-generates extension/skill/prompt file content as a starting point. OpenPi sends the description to the active Pi session as a structured prompt; the agent writes the resource files into the correct Pi directories.
+- Per-resource sections with descriptions and `New…` / `Browse…` actions:
+  - **Extensions**: define custom tools, event hooks, compaction logic — `New…` opens an editor scaffold (TypeScript with `ExtensionAPI` type stub)
+  - **Skills**: create SKILL.md files for domain workflows — `New…` with template
+  - **Prompts**: create `.md` prompt templates — `New…` with frontmatter scaffold
+  - **Themes**: theme JSON files — `New…`
+  - **Packages**: browse/install Pi Packages from npm/git — `Browse…` opens package search
+- Use Pi SDK `DefaultResourceLoader` to discover all resources; watch for filesystem changes and reload
+- Per-entry metadata: name, source path, scope (user/project), package origin, enabled/disabled toggle
+- Provenance badge: user-global vs project-local vs installed package
+- **Extension trust gate**: show source path + warning + require explicit confirmation before enabling any extension
+
+Acceptance criteria:
+- Count badges match actual discovered resources from Pi directories
+- AI wizard generates plausible resource file content via Pi session prompt; files land in correct Pi directories
+- Extensions from project-local paths vs global paths are visually distinct
+- Enabling a new extension shows source path and requires one-click confirmation
+- `New…` scaffolds open with correct file template in an embedded editor
+- Installing/uninstalling packages requires explicit user action (no silent installs)
+- Reload resources updates all counts without app restart
+
+---
+
+## Phase 3 — Agent Mode + Message Queue Semantics
+
+**Goal:** preserve Pi's steering/follow-up behavior in desktop UX.
+
+Build:
+- Visible message queue: steering queue entries and follow-up queue entries shown separately
+- Steer input: available while agent is running, sent via `session.steer()`
+- Follow-up input: queued for after agent stops, sent via `session.followUp()`
+- Queue state driven by `queue_update` events
+- Alt+Enter / keyboard shortcut to switch between steer and follow-up modes
+- Clear queue button
+- Pending message chips showing queued items
+- Abort button restores pending messages to input
+- Session tree view: navigate branches via `SessionManager.getTree()`, jump to entry, see compaction entries and branch summaries
+- `/tree` equivalent: select earlier entry, continue from there (via `session.navigateTree()`)
+- Fork session action (via `AgentSessionRuntime.fork()`)
+- Session name editor (via `set_session_name` / `pi.setSessionName()`)
+- Compaction status indicator (compaction_start/end events)
+
+Acceptance criteria:
+- User can send steering message while agent is mid-turn; it delivers after tool calls complete
+- Follow-up appears in queue and delivers after agent stops
+- Queue state is visible and clearable
+- Session tree view shows parent/child relationships, not flat chat
+- Forking creates a new session file with correct parentSession reference
+- Compaction events are surfaced (e.g., "context compacted" entry in conversation)
+- Abort clears pending queue to input field
+
+---
+
+## Phase 4 — Terminal Pane
+
+**Goal:** production-quality shell terminal as a **bottom panel**, kept strictly separate from agent mode.
+
+### Layout
+
+The terminal lives in a **resizable bottom panel** below the agent conversation area — not a side-by-side pane. This matches the reference screenshot layout.
+
+- Vertical split: agent conversation (top, flex) + terminal panel (bottom, resizable via drag handle)
+- Panel has two tabs: **`Output`** and **`Terminal`**
+- **`Output` tab**: streams Pi SDK stdout/stderr and OpenPi app logs (extension errors, SDK warnings, IPC diagnostics). Read-only. Auto-scrolls.
+- **`Terminal` tab**: interactive shell (xterm.js + node-pty)
+- Tab bar (top-right of panel): active tab name (e.g. `zsh - copilot-proxy`) + `+` new terminal + split dropdown + detach + close tab + close panel buttons
+- Panel can be fully hidden (keyboard shortcut) and restored
+
+Build:
+- xterm.js terminal with fit/webLinks/search addons
+- node-pty PTY lifecycle in Electron main: spawn, resize, write, close
+- Shell auto-detection (user's default shell from env)
+- Copy/paste/right-click context menu
+- Multiple terminal instances (tabs) with per-tab title from process cwd
+- Resizable split panel (store height in SQLite prefs; restore on relaunch)
+- **`Output` tab**: subscribe to Pi SDK `extension_error` events and app-level IPC error channel; line-buffered display with timestamp prefix
+- Command/output block capture: group command + output + exit code + cwd + timestamp
+- Blocks stored in SQLite for session history
+- Terminal mode is a distinct mode from Agent Mode — shell terminal is not a Pi input surface
+
+Acceptance criteria:
+- Terminal opens in bottom panel (not a modal or side pane)
+- Output tab shows Pi SDK extension_error events and app logs in real time
+- PTY resizes correctly when panel is resized
+- Panel height persists across app restarts
+- Multiple terminal tabs each spawn an independent PTY
+- Terminal process exits cleanly when tab closes
+- Terminal pane has zero knowledge of Pi session state or agent events
+
+---
+
+## Phase 5 — Git Source Control Panel + Diff Viewer
+
+**Goal:** make agent file edits visible, reviewable, and committable — persistent right panel + inline split diff.
+
+### Git Source Control Panel (persistent right panel)
+
+This panel is always visible alongside the conversation, not just post-agent-run:
+
+Build:
+- **"Changes" tab**: live `git status` watch via `chokidar` on the workspace `.git` directory
+- File list with per-file: relative path, parent directory, status badge (M = modified, A = added, D = deleted, R = renamed), `+N -N` line-count delta
+- **Branch Changes** header: total `+N -N` across all changed files
+- File click → opens split-pane diff viewer in the center panel
+- **Commit workflow** (all executed in Electron main, never renderer):
+  - Stage individual files or all files
+  - Commit message input
+  - `Commit` button → runs `git add <specific-files> && git commit -m "..."` via Electron main
+  - Commit dropdown: Commit, Commit & Push, Amend
+- **"Files" tab**: project file tree browser
+- All git mutations (stage, commit, push, revert) run exclusively in Electron main via `simple-git` or direct child_process — never via Pi tools, Pi SDK, or renderer code
+
+### Split-Pane Diff Viewer (center panel, activated by file click)
+
+Build:
+- **Side-by-side split view**: old (left) + new (right) columns — matching the reference screenshot
+- Syntax-highlighted code using workspace language detection
+- **"N of M" file navigation** with ← → arrows cycling through all changed files in order
+- Diff lines: red for removed, green for added, neutral for context lines
+- Collapsed sections for large unchanged regions (e.g. `26 hidden lines`)
+- Hunk-level accept/reject: UI collects intent; Electron main executes `git apply` or `git checkout -- <file>`
+- Diff computation in Electron main via `simple-git diff`, sends structured hunk data to renderer — never raw git output
+- `@pierre/diffs` renders hunk blocks; swap point is the adapter between hunk data and renderer
+- Session-linked diff: agent run → changed files list auto-updates the panel
+
+Acceptance criteria:
+- Changes panel updates within 1s of a file write in the workspace
+- File badges (M/A/D) and `+N -N` counts match `git diff --stat` output
+- Clicking a file opens its split-pane diff in the center panel
+- `N of M` navigation cycles through all changed files in order
+- Commit workflow stages only the specified files — no accidental `git add .`
+- Renderer never calls git directly; all mutations go through Electron main IPC
+- `@pierre/diffs` can be swapped via a local adapter without touching git logic
+- Hunk accept/reject correctly applies or reverts the specific hunk
+
+---
+
+## Phase 6 — Security Hardening + Settings + Release
+
+**Goal:** ship a signed, usable desktop app with proper permission gates and settings.
+
+Build:
+- Permission gate: for destructive shell commands detected in tool calls, show confirm dialog (uses Pi's extension `beforeToolCall` hook or RPC `extension_ui_request` protocol)
+- Protected paths: configurable list of paths that require explicit approval for writes
+- Workspace trust model: new workspace → trust prompt before loading project-local extensions
+- API key management: OS keychain via Electron `safeStorage`, redact from logs/exports
+- Settings UI: providers, models, thinking levels, auto-compaction, MCP servers (via extension config), keybindings
+- Provider/model capability display from `ModelRegistry`
+- Export/diagnostics bundle with secret redaction
+- Electron production builds: macOS arm64 + x64 first, Windows x64 next
+- Code signing and notarization for macOS
+- SQLite WAL mode, schema versioning, migration runner
+- Startup progress events for slow boot/migration
+
+Acceptance criteria:
+- Destructive commands (rm -rf, git reset --hard, etc.) trigger confirm dialog
+- API keys are not stored in plaintext; redacted from all logs and exports
+- New workspace with project-local extensions shows trust prompt before loading
+- App runs without a dev server (production build)
+- Crash-safe SQLite: WAL + foreign keys, no data loss on hard kill
+- Build pipeline is reproducible on CI
+
+---
+
+## Testing Strategy
+
+Each phase gets the smallest reliable verification for its slice.
+
+| Layer | Tests |
+|---|---|
+| IPC contracts | Zod schema roundtrip tests for every channel |
+| Pi SDK integration | Fake `AgentSession` with deterministic event fixtures |
+| Session index | SQLite upsert/query tests with fixture JSONL files |
+| Renderer | Component tests for critical state (streaming, queue, tool cards) |
+| PTY | Smoke tests: spawn shell, echo command, resize, exit |
+| Diff/patch | Unit tests with fixture repos; accept/reject via git apply |
+| Permission | Gate tests: blocked paths, destructive command detection |
+| E2E | Playwright: open workspace → prompt → see tool cards → diff |
+
+---
+
+## Non-Goals Until Proven Necessary
+
+- Subprocess RPC isolation for Pi SDK (add when process isolation is proven needed)
+- Cloud sync or collaboration
+- Plugin marketplace
+- Full IDE (Monaco for editing, not for replacing VS Code)
+- Custom Rust UI renderer
+- Mobile
+- Scheduler / cloud agents
+- Automatic third-party package installation
+- Rewriting Pi's agent runtime
+- Forking Warp or OpenWarp

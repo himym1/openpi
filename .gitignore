@@ -1,0 +1,33 @@
+.beads/
+.bv/
+
+.pi/
+
+# Dependencies and package-manager artifacts
+node_modules/
+
+# Build outputs and reports
+out/
+dist/
+dist-electron/
+release/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Runtime logs and local data
+*.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Local environment files
+.env
+.env.*
+!.env.example
+

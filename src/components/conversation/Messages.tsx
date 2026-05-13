@@ -1,0 +1,407 @@
+import { Check, Copy, GitBranch } from 'lucide-solid'
+import {
+  type Component,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from 'solid-js'
+import { DEFAULT_DISPLAY_PREFERENCES, type DisplayPreferences } from '../../lib/displayPreferences'
+import type { SessionHistoryMessage } from '../../lib/ipc'
+import type { Message, SystemMessage, ToolCard } from '../../types/session'
+import { MarkdownContent } from './MarkdownContent'
+import { ToolCardView } from './ToolCardView'
+
+type MessageActionsProps = {
+  messageId: string
+  text: string
+  streaming?: boolean
+  onFork?: (id: string) => void
+}
+
+function MessageActions(props: MessageActionsProps) {
+  const [copied, setCopied] = createSignal(false)
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+
+  onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
+  })
+
+  const handleCopy = () => {
+    void navigator.clipboard.writeText(props.text)
+    setCopied(true)
+    if (copiedTimer) clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => setCopied(false), 1800)
+  }
+
+  return (
+    <Show when={!props.streaming}>
+      <div class="message-actions">
+        <button type="button" class="msg-action-btn" onClick={handleCopy} title="Copy text">
+          <Show when={copied()} fallback={<Copy size={12} />}>
+            <Check size={12} />
+          </Show>
+        </button>
+        <Show when={props.onFork}>
+          <button
+            type="button"
+            class="msg-action-btn fork-btn"
+            onClick={() => props.onFork?.(props.messageId)}
+            title="Fork conversation from here"
+          >
+            <GitBranch size={12} />
+            <span>fork</span>
+          </button>
+        </Show>
+      </div>
+    </Show>
+  )
+}
+
+type UserMessageProps = {
+  message: SessionHistoryMessage
+  onFork?: (id: string) => void
+}
+
+export const UserMessage: Component<UserMessageProps> = (props) => {
+  return (
+    <div class="message-row user-message-row">
+      <div class="user-msg-stack">
+        <div class="user-bubble">
+          <p>{props.message.text}</p>
+        </div>
+        <MessageActions
+          messageId={props.message.id}
+          text={props.message.text}
+          streaming={props.message.streaming}
+          onFork={props.onFork}
+        />
+      </div>
+    </div>
+  )
+}
+
+type Segment =
+  | { kind: 'rail'; cards: ToolCard[] }
+  | { kind: 'thinking'; content: string; streaming?: boolean; id: string }
+  | { kind: 'text'; content: string; streaming?: boolean; id: string }
+
+function ThinkingBlock(props: { text: string; streaming?: boolean; show: boolean }) {
+  const [open, setOpen] = createSignal(props.show || !!props.streaming)
+
+  createEffect(() => {
+    setOpen(props.show || !!props.streaming)
+  })
+
+  return (
+    <Show when={props.show}>
+      <details
+        class={`thinking-block${props.streaming ? ' is-streaming' : ' is-complete'}`}
+        open={open()}
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+      >
+        <summary>
+          <span class="thinking-label">Thinking</span>
+          <Show when={props.streaming}>
+            <span class="thinking-state">streaming</span>
+          </Show>
+        </summary>
+        <Show when={open()}>
+          <div class="thinking-body">
+            <MarkdownContent text={props.text} streaming={props.streaming} />
+          </div>
+        </Show>
+      </details>
+    </Show>
+  )
+}
+
+function buildSegments(messages: SessionHistoryMessage[]): Segment[] {
+  const segs: Segment[] = []
+  let rail: ToolCard[] = []
+
+  for (const msg of messages) {
+    if (msg.thinking) {
+      if (rail.length > 0) {
+        segs.push({ kind: 'rail', cards: [...rail] })
+        rail = []
+      }
+      segs.push({
+        kind: 'thinking',
+        content: msg.thinking,
+        streaming: msg.streaming,
+        id: `${msg.id}:thinking`,
+      })
+    }
+    if (msg.toolCards.length > 0) {
+      rail.push(...msg.toolCards)
+    }
+    if (msg.text) {
+      if (rail.length > 0) {
+        segs.push({ kind: 'rail', cards: [...rail] })
+        rail = []
+      }
+      segs.push({ kind: 'text', content: msg.text, streaming: msg.streaming, id: msg.id })
+    }
+  }
+
+  if (rail.length > 0) segs.push({ kind: 'rail', cards: rail })
+
+  return segs
+}
+
+type UsageMetrics = {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  total: number
+  durationMs: number
+  tps: number | null
+  cost: number
+}
+
+function usageTotal(message: SessionHistoryMessage): number {
+  return (
+    message.totalTokens ??
+    (message.inputTokens ?? 0) +
+      (message.outputTokens ?? 0) +
+      (message.cacheReadTokens ?? 0) +
+      (message.cacheWriteTokens ?? 0)
+  )
+}
+
+function aggregateUsage(messages: SessionHistoryMessage[]): UsageMetrics {
+  const input = messages.reduce((sum, msg) => sum + (msg.inputTokens ?? 0), 0)
+  const output = messages.reduce((sum, msg) => sum + (msg.outputTokens ?? 0), 0)
+  const cacheRead = messages.reduce((sum, msg) => sum + (msg.cacheReadTokens ?? 0), 0)
+  const cacheWrite = messages.reduce((sum, msg) => sum + (msg.cacheWriteTokens ?? 0), 0)
+  const total = messages.reduce((sum, msg) => sum + usageTotal(msg), 0)
+  const durationMs = Math.max(0, ...messages.map((msg) => msg.durationMs ?? 0))
+  const tps = durationMs > 0 && output > 0 ? output / (durationMs / 1000) : null
+  const cost = messages.reduce((sum, msg) => sum + (msg.cost ?? 0), 0)
+  return { input, output, cacheRead, cacheWrite, total, durationMs, tps, cost }
+}
+
+function formatRuntime(ms: number): string {
+  if (ms <= 0) return ''
+  const seconds = ms / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainder = Math.round(seconds % 60)
+  return `${minutes}m ${remainder}s`
+}
+
+function UsageRow(props: { modelName?: string; metrics: UsageMetrics }) {
+  return (
+    <div class="message-usage">
+      <Show when={props.modelName}>
+        <span class="message-usage-model">{props.modelName}</span>
+      </Show>
+      <Show when={props.metrics.tps !== null}>
+        <span>TPS {props.metrics.tps!.toFixed(1)} tok/s</span>
+      </Show>
+      <span>out {props.metrics.output.toLocaleString()}</span>
+      <span>in {props.metrics.input.toLocaleString()}</span>
+      <span>
+        {`cache r/w ${props.metrics.cacheRead.toLocaleString()}/${props.metrics.cacheWrite.toLocaleString()}`}
+      </span>
+      <span>total {props.metrics.total.toLocaleString()}</span>
+      <Show when={props.metrics.durationMs > 0}>
+        <span>{formatRuntime(props.metrics.durationMs)}</span>
+      </Show>
+      <Show when={props.metrics.cost > 0}>
+        <span>${props.metrics.cost.toFixed(4)}</span>
+      </Show>
+    </div>
+  )
+}
+
+type AssistantMessageGroupProps = {
+  messages: SessionHistoryMessage[]
+  onFork?: (id: string) => void
+  onFileClick?: (path: string) => void
+  displayPreferences: DisplayPreferences
+}
+
+export const AssistantMessageGroup: Component<AssistantMessageGroupProps> = (props) => {
+  const lastMsg = createMemo(() => props.messages[props.messages.length - 1])
+  const usage = createMemo(() => aggregateUsage(props.messages))
+
+  const segments = createMemo(() => buildSegments(props.messages))
+  const hasContent = createMemo(() => segments().length > 0)
+  const allText = createMemo(() =>
+    props.messages
+      .map((msg) => msg.text)
+      .filter(Boolean)
+      .join('\n\n')
+  )
+  const modelName = createMemo(() => props.messages.find((msg) => msg.modelName)?.modelName)
+
+  return (
+    <div class="message-row assistant-message-row">
+      <div class="assistant-body">
+        <For each={segments()}>
+          {(segment) => {
+            if (segment.kind === 'rail') {
+              return (
+                <div class="tool-group-rail">
+                  <For each={segment.cards}>
+                    {(card) => (
+                      <ToolCardView
+                        card={card}
+                        onFileClick={props.onFileClick}
+                        displayPreferences={props.displayPreferences}
+                      />
+                    )}
+                  </For>
+                </div>
+              )
+            }
+
+            if (segment.kind === 'thinking') {
+              return (
+                <ThinkingBlock
+                  text={segment.content}
+                  streaming={segment.streaming}
+                  show={props.displayPreferences.showReasoningSummaries}
+                />
+              )
+            }
+
+            return <MarkdownContent text={segment.content} streaming={segment.streaming} />
+          }}
+        </For>
+
+        <Show when={!hasContent() && lastMsg()?.streaming}>
+          <div class="typing-dots">
+            <For each={[0, 150, 300]}>
+              {(delay) => (
+                <span class="pulse" style={{ 'animation-delay': `${delay}ms` }}>
+                  ·
+                </span>
+              )}
+            </For>
+          </div>
+        </Show>
+
+        <Show when={usage().input > 0 || usage().output > 0 || usage().total > 0}>
+          <UsageRow modelName={modelName()} metrics={usage()} />
+        </Show>
+
+        <MessageActions
+          messageId={lastMsg()?.id ?? ''}
+          text={allText()}
+          streaming={lastMsg()?.streaming}
+          onFork={props.onFork}
+        />
+      </div>
+    </div>
+  )
+}
+
+type AssistantMessageProps = {
+  message: SessionHistoryMessage
+  onFork?: (id: string) => void
+  onFileClick?: (path: string) => void
+  displayPreferences: DisplayPreferences
+}
+
+export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
+  return (
+    <div class="message-row assistant-message-row">
+      <div class="assistant-header">
+        <div class="assistant-avatar-badge">π</div>
+        <span class="assistant-name-tag">Pi</span>
+      </div>
+      <div class="assistant-body">
+        <Show when={props.message.thinking}>
+          <ThinkingBlock
+            text={props.message.thinking ?? ''}
+            streaming={props.message.streaming}
+            show={props.displayPreferences.showReasoningSummaries}
+          />
+        </Show>
+
+        <For each={props.message.toolCards}>
+          {(card) => (
+            <ToolCardView
+              card={card}
+              onFileClick={props.onFileClick}
+              displayPreferences={props.displayPreferences}
+            />
+          )}
+        </For>
+
+        <Show when={props.message.text}>
+          <MarkdownContent text={props.message.text} streaming={props.message.streaming} />
+        </Show>
+
+        <Show
+          when={!props.message.text && !props.message.toolCards.length && props.message.streaming}
+        >
+          <div class="typing-dots">
+            <For each={[0, 150, 300]}>
+              {(delay) => (
+                <span class="pulse" style={{ 'animation-delay': `${delay}ms` }}>
+                  ·
+                </span>
+              )}
+            </For>
+          </div>
+        </Show>
+
+        <Show
+          when={
+            (props.message.inputTokens ?? 0) > 0 ||
+            (props.message.outputTokens ?? 0) > 0 ||
+            usageTotal(props.message) > 0
+          }
+        >
+          <UsageRow modelName={props.message.modelName} metrics={aggregateUsage([props.message])} />
+        </Show>
+
+        <MessageActions
+          messageId={props.message.id}
+          text={props.message.text}
+          streaming={props.message.streaming}
+          onFork={props.onFork}
+        />
+      </div>
+    </div>
+  )
+}
+
+type SystemMsgProps = {
+  message: SystemMessage
+}
+
+export const SystemMsg: Component<SystemMsgProps> = (props) => {
+  return (
+    <div class={`system-message ${props.message.done ? 'is-done' : 'is-pending'}`}>
+      <span class="system-msg-icon">{props.message.kind === 'compaction' ? '⟳' : '↺'}</span>
+      <span class="system-msg-text">{props.message.text}</span>
+    </div>
+  )
+}
+
+export function renderMessage(
+  message: Message,
+  onFork?: (id: string) => void,
+  onFileClick?: (path: string) => void,
+  displayPreferences: DisplayPreferences = DEFAULT_DISPLAY_PREFERENCES
+) {
+  if (message.role === 'system') return <SystemMsg message={message as SystemMessage} />
+  if (message.role === 'user')
+    return <UserMessage message={message as SessionHistoryMessage} onFork={onFork} />
+  return (
+    <AssistantMessage
+      message={message as SessionHistoryMessage}
+      onFork={onFork}
+      onFileClick={onFileClick}
+      displayPreferences={displayPreferences}
+    />
+  )
+}

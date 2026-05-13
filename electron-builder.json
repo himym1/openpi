@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "dev.openpi.app",
+  "productName": "OpenPi",
+  "asar": true,
+  "directories": {
+    "output": "release/${version}"
+  },
+  "files": ["out"],
+  "extraResources": [
+    {
+      "from": "icons",
+      "to": "icons"
+    }
+  ],
+  "mac": {
+    "category": "public.app-category.developer-tools",
+    "icon": "icons/icon.icns",
+    "target": ["dmg"]
+  },
+  "linux": {
+    "category": "Development",
+    "icon": "icons/icon.png",
+    "target": ["AppImage"]
+  },
+  "win": {
+    "icon": "icons/icon.ico",
+    "target": ["nsis"]
+  }
+}
