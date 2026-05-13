@@ -46,10 +46,20 @@ export async function discoverCustomizations(options: {
     settingsManager,
     noExtensions: true,
   })
-  await loader.reload()
-
   const items: CustomizationItem[] = []
   const diagnostics: CustomizationDiagnostic[] = []
+
+  // loader.reload() invokes the Pi SDK package manager which may run `npm root -g`.
+  // If npm is not in PATH (e.g., GUI-launched on macOS from Finder/Dock),
+  // capture the failure as a warning so skills/prompts/themes still load from fs.
+  await loader.reload().catch((err: unknown) => {
+    diagnostics.push({
+      type: 'warning' as const,
+      message: `Package resource resolution failed (npm may not be in PATH): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    })
+  })
 
   items.push(...discoverExtensionItems({ cwd, agentDir, settingsManager, diagnostics }))
 
@@ -111,21 +121,32 @@ export async function discoverCustomizations(options: {
     })
   }
 
-  const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager })
-  for (const configured of packageManager.listConfiguredPackages()) {
-    items.push({
-      id: `packages:${configured.scope}:${configured.source}`,
-      type: 'packages',
-      name: configured.source,
-      description: configured.filtered
-        ? 'Configured with resource filters'
-        : 'Configured Pi package source',
-      path: configured.installedPath ?? null,
-      scope: configured.scope,
-      origin: 'package',
-      source: configured.source,
-      enabled: true,
-      packageSource: configured.source,
+  try {
+    const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager })
+    for (const configured of packageManager.listConfiguredPackages()) {
+      items.push({
+        id: `packages:${configured.scope}:${configured.source}`,
+        type: 'packages',
+        name: configured.source,
+        description: configured.filtered
+          ? 'Configured with resource filters'
+          : 'Configured Pi package source',
+        path: configured.installedPath ?? null,
+        scope: configured.scope,
+        origin: 'package',
+        source: configured.source,
+        enabled: true,
+        packageSource: configured.source,
+      })
+    }
+  } catch (err) {
+    // listConfiguredPackages() calls `npm root -g` for user-scoped npm packages.
+    // If npm is not in PATH (GUI-launched app on macOS), degrade gracefully.
+    diagnostics.push({
+      type: 'warning',
+      message: `Pi package discovery unavailable (npm may not be in PATH): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
     })
   }
 

@@ -1,6 +1,7 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -110,6 +111,42 @@ import { getSettings, saveSettings as writeSettings } from './settingsHost'
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 const execFileAsync = promisify(execFile)
+
+// ── Login-shell PATH enrichment ──────────────────────────────────────────────
+// macOS GUI apps launched from Finder/Dock receive a stripped PATH
+// (/usr/bin:/bin:/usr/sbin:/sbin) that omits nvm, Homebrew, etc.
+// We run the user's login shell once at startup to harvest the full PATH
+// so subprocesses (npm, git, node) can be found regardless of launch method.
+function enrichPathFromLoginShell(): void {
+  if (process.platform === 'win32') return
+  const shell = process.env.SHELL
+  if (!shell) return
+  try {
+    const result = spawnSync(shell, ['-lc', 'echo $PATH'], {
+      encoding: 'utf-8',
+      timeout: 3000,
+      env: {
+        HOME: process.env.HOME ?? os.homedir(),
+        // TERM=dumb prevents colour/prompt codes in login scripts
+        TERM: 'dumb',
+      },
+    })
+    if (result.status === 0 && result.stdout) {
+      const loginPath = result.stdout.trim()
+      if (loginPath) {
+        const merged = new Set(loginPath.split(':').filter(Boolean))
+        for (const p of (process.env.PATH ?? '').split(':').filter(Boolean)) {
+          merged.add(p)
+        }
+        process.env.PATH = [...merged].join(':')
+      }
+    }
+  } catch {
+    // Best-effort — silently continue if the shell does not respond in time
+  }
+}
+
+enrichPathFromLoginShell()
 
 app.setName('OpenPi')
 app.setAppUserModelId('dev.openpi.app')
