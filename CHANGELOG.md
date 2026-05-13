@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-05-14
+
+OpenPi v0.1.8 adds Homebrew cask distribution and makes the update chip point users toward Homebrew upgrades.
+
 ### Added
 
 - **Homebrew cask distribution** — OpenPi can now be installed and upgraded from the `heyhuynhgiabuu/openpi` Homebrew tap with `brew install --cask openpi` and `brew upgrade --cask openpi`.
