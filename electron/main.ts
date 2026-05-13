@@ -208,7 +208,6 @@ let mainWindow: BrowserWindow | null = null
 let sessionIndex: SessionIndexStore | null = null
 let refreshInFlight: Promise<void> | null = null
 let fffHostPromise: Promise<typeof FffHost> | null = null
-let fffInitializedCwd: string | null = null
 let customizationsHostPromise: Promise<typeof CustomizationsHost> | null = null
 let piSidecarHost: PiSidecarHost | null = null
 
@@ -234,10 +233,13 @@ async function ensureFffInitialized(): Promise<typeof FffHost | null> {
   const cwd = state?.cwd ?? deferredWorkspace ?? ''
   if (!cwd) return null
   const host = await getFffHost()
-  if (fffInitializedCwd !== cwd) {
-    host.initFff(cwd)
-    fffInitializedCwd = cwd
-  }
+  // Always delegate to initFff — it is idempotent via its own guard:
+  //   if (currentCwd === cwd && finder) return  // no-op when already healthy
+  // Using fffInitializedCwd here was a premature optimisation that caused a
+  // silent failure: if FileFinder.create() failed (e.g. quarantined binary,
+  // permission error), finder stayed null but fffInitializedCwd was still set
+  // to cwd, so subsequent calls skipped initFff and permanently returned [].
+  host.initFff(cwd)
   return host
 }
 
@@ -577,7 +579,6 @@ async function startSession(cwd: string, options: StartSessionOptions = {}): Pro
       host.stopGitPoll()
     })
   if (fffHostPromise) {
-    fffInitializedCwd = null
     void getFffHost().then((host) => host.destroyFff())
   }
 
@@ -1582,7 +1583,6 @@ app.on('quit', () => {
       g.stopFileTreeWatch()
     })
   if (fffHostPromise) void getFffHost().then((host) => host.destroyFff())
-  fffInitializedCwd = null
   if (piSidecarHost) void piSidecarHost.stop()
   state = null
   if (ptyHostPromise) void getPtyHost().then((p) => p.closeAll())

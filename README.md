@@ -85,7 +85,15 @@ Current beta notes live in [`RELEASE_NOTES.md`](RELEASE_NOTES.md), and version h
 
 ## Beta caveats
 
-- macOS notarization and Windows code signing are not configured yet, so beta installers may show OS trust warnings.
+**macOS — app is not notarized yet.** After dragging `OpenPi.app` to `/Applications`, macOS Gatekeeper will block it on first launch. Run this once in Terminal to remove the quarantine flag:
+
+```sh
+xattr -rd com.apple.quarantine /Applications/OpenPi.app
+```
+
+Then double-click the app as normal. This will no longer be required once notarization is configured.
+
+- macOS notarization and Windows code signing are not configured yet.
 - Permission gates, workspace trust hardening, protected-path policy, and keychain-backed secrets are still active roadmap items.
 - Some custom-widget accessibility diagnostics are warning-level while the desktop UI matures; concrete label/button checks remain enforced.
 
