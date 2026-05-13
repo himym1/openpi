@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-13
+
+- Release OpenPi v0.1.4.
+
+
 ## [0.1.3] - 2026-05-13
 
 - Release OpenPi v0.1.3.
