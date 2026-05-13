@@ -22,7 +22,7 @@ const next = changelog.indexOf('\n## [', start + heading.length)
 const section = changelog.slice(start, next < 0 ? changelog.length : next).trim()
 const lines = section.split('\n')
 const title = lines[0].replace(/^## \[([^\]]+)\](.*)$/, '# OpenPi v$1$2')
-const body = [title, ...lines.slice(1)].join('\n').trimEnd() + '\n'
+const body = `${[title, ...lines.slice(1)].join('\n').trimEnd()}\n`
 
 fs.writeFileSync(outputPath, body)
 console.log(`Wrote ${outputPath} from CHANGELOG.md ${heading}`)
