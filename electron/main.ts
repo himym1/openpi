@@ -247,6 +247,28 @@ async function getGitHost(): Promise<typeof GitHost> {
   return gitHostPromise
 }
 
+/**
+ * (Re)start git status polling and file-tree watching for a workspace.
+ *
+ * Called from two places:
+ *  1. GIT_PANEL_MOUNTED — first paint after app launch.
+ *  2. session_ready    — every workspace/session switch.
+ *
+ * The GitPanel component never unmounts, so GIT_PANEL_MOUNTED fires only
+ * once per app lifetime. Without point (2), switching workspaces stops the
+ * poll (via stopGitPoll inside startSession) and never restarts it, leaving
+ * the panel showing stale data from the previous workspace.
+ */
+async function restartGitMonitoring(cwd: string): Promise<void> {
+  const git = await getGitHost()
+  git.startGitPoll(cwd, (status: GitStatusResult) => {
+    mainWindow?.webContents.send(IPC.GIT_STATUS_CHANGED, status)
+  })
+  git.startFileTreeWatch(cwd, () => {
+    mainWindow?.webContents.send(IPC.FILE_TREE_CHANGED)
+  })
+}
+
 let ptyHostPromise: Promise<PtyHostInstance> | null = null
 async function getPtyHost(): Promise<PtyHostInstance> {
   ptyHostPromise ??= import('./ptyHost').then((m) => m.ptyHost)
@@ -440,6 +462,12 @@ function handleSidecarMessage(msg: SidecarMessage): void {
       }
       deferredWorkspace = null
       mainWindow?.webContents.send(IPC.SESSION_READY, ready)
+      // Restart git monitoring for the new workspace. The GitPanel never
+      // unmounts, so GIT_PANEL_MOUNTED fires only once at app start. On every
+      // subsequent workspace/session switch startSession() calls stopGitPoll(),
+      // but the mount event never re-fires — leaving the panel stale.
+      // Restarting here guarantees the poll always tracks the current cwd.
+      void restartGitMonitoring(ready.cwd)
       return
     }
 
@@ -937,16 +965,13 @@ function registerHandlers(): void {
   // ── Git source control handlers ──────────────────────────────────────────────────
 
   ipcMain.on(IPC.GIT_PANEL_MOUNTED, () => {
+    // Panel mounted for the first time. If a session is already active use
+    // its cwd; otherwise fall back to the deferred workspace path. The
+    // session_ready handler also calls restartGitMonitoring, so normal
+    // workspace switches are covered without relying on this event.
     const cwd = state?.cwd ?? deferredWorkspace
     if (!cwd) return
-    void getGitHost().then((git) => {
-      git.startGitPoll(cwd, (status: GitStatusResult) => {
-        mainWindow?.webContents.send(IPC.GIT_STATUS_CHANGED, status)
-      })
-      git.startFileTreeWatch(cwd, () => {
-        mainWindow?.webContents.send(IPC.FILE_TREE_CHANGED)
-      })
-    })
+    void restartGitMonitoring(cwd)
   })
 
   ipcMain.handle(IPC.GIT_STATUS, async (): Promise<GitStatusResult | null> => {
