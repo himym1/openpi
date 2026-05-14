@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-05-14
+
+OpenPi v0.1.9 ships Phase 5 Git workflow, merge conflict resolution UI, and two critical bug fixes for slash commands and skill injection.
+
+### Added
+
+- **Git: enriched status** — upstream tracking, detached HEAD detection, conflict chip, in-progress operation (merge/rebase/cherry-pick), stash count in panel header (`12354bb`)
+- **Git: remote sync menu** — fetch, pull, pull-rebase, push with confirmation gates; icon-only sync button (`7885eee`)
+- **Git: branch and stash picker** — search-first; dirty-worktree guard blocks unsafe checkout (`4858694`)
+- **Git: history graph tab** — `git log --graph` ASCII lane rendering, commit search, selected commit details pane with per-file `+N/-N` stats (`70c3134`, `86312a4`, `ce4dc18`)
+- **Git: side-by-side diff viewer** — replaced custom unified renderer with `@pierre/diffs` `FileDiff`; `containerWrapper` mount path so shadow DOM split layout applies correctly (`e4d69f0`)
+- **Git: agent-aware commit workflow** — `AGENT_CHANGED_FILES` event fires after `agent_end` when uncommitted changes exist; dismissible banner in Changes tab; ✨ sparkle button generates conventional-commit messages via local heuristics (`e4d69f0`)
+- **Git: Zed-style commit composer** — dark composer box, segmented Commit Staged / options / push control; amend and signoff toggles wired through `git commit --amend/--signoff` in Electron main (`e4d69f0`)
+- **Git: file save in viewer** — `WRITE_FILE` IPC (path-traversal validated, main-owned); Save button + `⌘S`; dirty/saved/error status badges in file viewer toolbar (`e4d69f0`)
+- **Git: merge conflict resolution** — `ConflictResolverModal` using `@pierre/diffs` `UnresolvedFile`; conflicted files grouped under a Conflicts section (red heading) above Staged/Changes; accept current/incoming/both buttons; saves resolved content via `WRITE_FILE` and refreshes git status (`e4d69f0`)
+- **Customizations: Pi package management** — install and remove Pi packages from the Packages pane (`27eadd1`)
+
+### Fixed
+
+- **Slash command / prompt template activation** — selecting from the `/` picker stripped the leading slash so `session.prompt()` received `review` instead of `/review`; the Pi SDK's `expandPromptTemplates` guard (`text.startsWith("/")`) skipped expansion entirely; restored `/${cmd.name}` prefix (`5b49015`)
+- **Skill injection format** — chip-based skill context sent raw frontmatter and omitted the `location` attribute and `References are relative to …` note; now matches Pi SDK `_expandSkillCommand()` output exactly so relative script paths in skills resolve correctly (`b21a8a3`)
+- **Compaction token wording** — copy now correctly shows `tokensBefore` context size rather than implying freed tokens (`1faf5a1`)
+- **Native module ABI** — `better-sqlite3` and other native modules rebuilt against Electron's Node.js ABI via `electron-rebuild`; fixes packaged app crash on startup (`b7e4351`)
+- **Pi SDK process isolation** — Pi SDK now runs in an isolated Node child process via the sidecar to avoid Electron renderer conflicts (`c390c9b`)
+
+### Changed
+
+- Sync and search buttons in Git panel header are icon-only for a cleaner toolbar (`dc622bc`)
+
+
 ## [0.1.8] - 2026-05-14
 
 OpenPi v0.1.8 adds Homebrew cask distribution and makes the update chip point users toward Homebrew upgrades.
