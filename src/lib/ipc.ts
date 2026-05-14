@@ -693,6 +693,7 @@ export const gitHistoryCommitSchema = z.object({
   authorName: z.string(),
   authorEmail: z.string(),
   refs: z.string(),
+  graph: z.string(), // ASCII graph line from git log --graph
 })
 export type GitHistoryCommit = z.infer<typeof gitHistoryCommitSchema>
 

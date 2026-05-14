@@ -353,18 +353,41 @@ export async function getGitHistory(
   limit = 100
 ): Promise<GitHistoryResult> {
   const git = simpleGit({ baseDir: cwd })
-  const log = await git.log({ maxCount: Math.min(Math.max(limit, 1), 200) })
+
+  // Use git log --graph with custom format to parse graph structure
+  // Format: <graph>|<hash>|<author>|<email>|<date>|<message>|<refs>
+  const logOutput = await git.raw([
+    'log',
+    `--max-count=${Math.min(Math.max(limit, 1), 200)}`,
+    '--graph',
+    '--pretty=format:%gd|%H|%an|%ae|%ai|%s|%d',
+    '--all',
+  ])
+
   const normalizedQuery = query.trim().toLowerCase()
-  const commits: GitHistoryCommit[] = log.all
-    .map((entry) => ({
-      hash: entry.hash,
-      shortHash: entry.hash.slice(0, 7),
-      message: entry.message,
-      date: entry.date,
-      authorName: entry.author_name,
-      authorEmail: entry.author_email,
-      refs: entry.refs,
-    }))
+  const commits: GitHistoryCommit[] = logOutput
+    .split('\n')
+    .filter((line) => line.trim())
+    .map((line) => {
+      // Extract graph prefix (everything before first |)
+      const graphMatch = line.match(/^([^|]*)/)
+      const graph = graphMatch?.[1] ?? ''
+      const rest = line.slice(graph.length + 1)
+
+      // Parse the rest: hash|author|email|date|message|refs
+      const [hash, author, email, dateStr, message, refs] = rest.split('|')
+
+      return {
+        hash: hash?.trim() ?? '',
+        shortHash: (hash?.trim() ?? '').slice(0, 7),
+        authorName: author?.trim() ?? '',
+        authorEmail: email?.trim() ?? '',
+        date: dateStr?.trim() ?? '',
+        message: message?.trim() ?? '',
+        refs: refs?.trim() ?? '',
+        graph: graph.trimEnd(), // Keep trailing spaces for alignment
+      }
+    })
     .filter((entry) => {
       if (!normalizedQuery) return true
       return [entry.hash, entry.message, entry.authorName, entry.authorEmail, entry.refs]

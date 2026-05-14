@@ -67,6 +67,7 @@ export function GitPanel(props: GitPanelProps) {
   const [historyQuery, setHistoryQuery] = createSignal('')
   const [historyLoading, setHistoryLoading] = createSignal(false)
   const [historyError, setHistoryError] = createSignal<string | null>(null)
+  const [selectedCommit, setSelectedCommit] = createSignal<GitHistoryCommit | null>(null)
   const [localActiveTab, setLocalActiveTab] = createSignal<GitPanelTab>('changes')
   const [collapseAllCount, setCollapseAllCount] = createSignal(0)
   let mounted = true
@@ -638,22 +639,33 @@ export function GitPanel(props: GitPanelProps) {
               Search
             </button>
           </div>
-          <Show when={historyLoading()}>
-            <div class="git-panel-empty">Loading history…</div>
-          </Show>
-          <Show when={historyError()}>
-            <div class="git-commit-error">{historyError()}</div>
-          </Show>
-          <Show when={!historyLoading()}>
-            <div class="git-history-list">
-              <Show when={(history()?.commits.length ?? 0) === 0}>
-                <div class="git-panel-empty">No commits found</div>
+          <div class="git-history-container">
+            <Show when={historyLoading()}>
+              <div class="git-panel-empty">Loading history…</div>
+            </Show>
+            <Show when={historyError()}>
+              <div class="git-commit-error">{historyError()}</div>
+            </Show>
+            <Show when={!historyLoading()}>
+              <div class="git-history-list">
+                <Show when={(history()?.commits.length ?? 0) === 0}>
+                  <div class="git-panel-empty">No commits found</div>
+                </Show>
+                <For each={history()?.commits ?? []}>
+                  {(commit) => (
+                    <GitHistoryRow
+                      commit={commit}
+                      isSelected={selectedCommit()?.hash === commit.hash}
+                      onSelect={setSelectedCommit}
+                    />
+                  )}
+                </For>
+              </div>
+              <Show when={selectedCommit()}>
+                {(commit) => <GitHistoryDetailsPane commit={commit()} />}
               </Show>
-              <For each={history()?.commits ?? []}>
-                {(commit) => <GitHistoryRow commit={commit} />}
-              </For>
-            </div>
-          </Show>
+            </Show>
+          </div>
         </div>
       </Show>
     </aside>
@@ -662,6 +674,8 @@ export function GitPanel(props: GitPanelProps) {
 
 type GitHistoryRowProps = {
   commit: GitHistoryCommit
+  isSelected: boolean
+  onSelect: (commit: GitHistoryCommit) => void
 }
 
 function GitHistoryRow(props: GitHistoryRowProps) {
@@ -672,7 +686,14 @@ function GitHistoryRow(props: GitHistoryRowProps) {
   })
 
   return (
-    <div class="git-history-row">
+    <button
+      type="button"
+      class={`git-history-row ${props.isSelected ? 'is-selected' : ''}`}
+      onClick={() => props.onSelect(props.commit)}
+    >
+      <div class="git-history-graph-cell">
+        <pre>{props.commit.graph}</pre>
+      </div>
       <div class="git-history-message">
         <span>{props.commit.message}</span>
         <Show when={props.commit.refs}>
@@ -682,7 +703,57 @@ function GitHistoryRow(props: GitHistoryRowProps) {
       <div class="git-history-meta">
         <span>{props.commit.authorName}</span>
         <span>{formattedDate()}</span>
-        <span>{props.commit.shortHash}</span>
+        <span class="git-history-sha">{props.commit.shortHash}</span>
+      </div>
+    </button>
+  )
+}
+
+type GitHistoryDetailsPaneProps = {
+  commit: GitHistoryCommit
+}
+
+function GitHistoryDetailsPane(props: GitHistoryDetailsPaneProps) {
+  const formattedDate = createMemo(() => {
+    const timestamp = Date.parse(props.commit.date)
+    if (!Number.isFinite(timestamp)) return props.commit.date
+    const dt = new Date(timestamp)
+    return dt.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  })
+
+  return (
+    <div class="git-history-details-pane">
+      <div class="git-history-details-header">
+        <div class="git-history-details-sha">
+          <span class="label">Commit</span>
+          <code>{props.commit.hash}</code>
+        </div>
+      </div>
+      <div class="git-history-details-row">
+        <span class="label">Author</span>
+        <span>
+          {props.commit.authorName} ({props.commit.authorEmail})
+        </span>
+      </div>
+      <div class="git-history-details-row">
+        <span class="label">Date</span>
+        <span>{formattedDate()}</span>
+      </div>
+      <Show when={props.commit.refs}>
+        <div class="git-history-details-row">
+          <span class="label">Refs</span>
+          <span class="git-history-refs">{props.commit.refs}</span>
+        </div>
+      </Show>
+      <div class="git-history-details-message">
+        <span class="label">Message</span>
+        <pre>{props.commit.message}</pre>
       </div>
     </div>
   )
