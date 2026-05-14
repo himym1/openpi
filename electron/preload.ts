@@ -16,6 +16,8 @@ import type {
   GitBranchInfo,
   GitFileDiff,
   GitStatusResult,
+  GitSyncAction,
+  GitSyncResult,
   ModelInfo,
   OpenSession,
   OutputLine,
@@ -186,6 +188,8 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_COMMIT, { paths, message, push }),
     discard: (filePath: string): Promise<void> =>
       ipcRenderer.invoke(IPC.GIT_DISCARD, { path: filePath }),
+    sync: (action: GitSyncAction): Promise<GitSyncResult | null> =>
+      ipcRenderer.invoke(IPC.GIT_SYNC, { action }),
     onStatusChanged: (cb: (status: GitStatusResult) => void) => {
       const handler = (_: Electron.IpcRendererEvent, s: GitStatusResult) => cb(s)
       ipcRenderer.on(IPC.GIT_STATUS_CHANGED, handler)

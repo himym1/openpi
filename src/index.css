@@ -5083,6 +5083,77 @@ input::placeholder {
   background: rgba(251, 146, 60, 0.08);
 }
 
+.git-sync-menu {
+  position: relative;
+  margin-left: auto;
+}
+
+.git-sync-btn {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-xs);
+  background: var(--surface-soft);
+  color: var(--graphite);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.git-sync-btn:disabled {
+  color: var(--ash);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.git-sync-popover {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 140px;
+  padding: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.git-sync-menu:hover .git-sync-popover,
+.git-sync-menu:focus-within .git-sync-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.git-sync-popover button {
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--graphite);
+  text-align: left;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.git-sync-popover button:hover:not(:disabled) {
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.git-sync-popover button:disabled {
+  color: var(--ash);
+  cursor: not-allowed;
+}
+
+.git-sync-message {
+  padding: 2px 2px 0;
+  color: var(--ash);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .git-delta-add {
   color: #4ade80;
 }

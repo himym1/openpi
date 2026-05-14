@@ -18,6 +18,8 @@ import type {
   GitFileDiff,
   GitOperation,
   GitStatusResult,
+  GitSyncAction,
+  GitSyncResult,
   WorkspaceSummaryInfo,
 } from '../src/lib/ipc'
 
@@ -337,6 +339,25 @@ export async function commitFiles(
 /** Discard working-tree changes for a tracked file (git checkout -- <file>) */
 export async function discardFile(cwd: string, filePath: string): Promise<void> {
   await simpleGit({ baseDir: cwd }).checkout(['--', filePath])
+}
+
+export async function syncRemote(cwd: string, action: GitSyncAction): Promise<GitSyncResult> {
+  const git = simpleGit({ baseDir: cwd })
+  try {
+    let output = ''
+    if (action === 'fetch') {
+      output = await git.fetch().then(() => 'Fetched remote refs.')
+    } else if (action === 'pull') {
+      output = await git.pull().then(() => 'Pulled current branch.')
+    } else if (action === 'pull-rebase') {
+      output = await git.pull(['--rebase']).then(() => 'Pulled current branch with rebase.')
+    } else {
+      output = await git.push().then(() => 'Pushed current branch.')
+    }
+    return { ok: true, action, output: output.trim() || `${action} completed.` }
+  } catch (error) {
+    return { ok: false, action, output: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 // ─── Polling watcher ────────────────────────────────────────────────────────

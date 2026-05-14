@@ -59,6 +59,7 @@ export const IPC = {
   GIT_UNSTAGE: 'openpi:git-unstage',
   GIT_COMMIT: 'openpi:git-commit',
   GIT_DISCARD: 'openpi:git-discard',
+  GIT_SYNC: 'openpi:git-sync',
   GIT_FILE_TREE: 'openpi:git-file-tree',
   GIT_PANEL_MOUNTED: 'openpi:git-panel-mounted',
   READ_FILE: 'openpi:read-file',
@@ -634,6 +635,19 @@ export type GitCommitRequest = z.infer<typeof gitCommitSchema>
 
 export const gitDiscardSchema = z.object({ path: z.string() })
 export type GitDiscardRequest = z.infer<typeof gitDiscardSchema>
+
+export const gitSyncActionSchema = z.enum(['fetch', 'pull', 'pull-rebase', 'push'])
+export type GitSyncAction = z.infer<typeof gitSyncActionSchema>
+
+export const gitSyncSchema = z.object({ action: gitSyncActionSchema })
+export type GitSyncRequest = z.infer<typeof gitSyncSchema>
+
+export const gitSyncResultSchema = z.object({
+  ok: z.boolean(),
+  action: gitSyncActionSchema,
+  output: z.string(),
+})
+export type GitSyncResult = z.infer<typeof gitSyncResultSchema>
 
 // ─── File tree schema ──────────────────────────────────────────────────
 

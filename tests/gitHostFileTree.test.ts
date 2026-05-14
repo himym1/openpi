@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { getFileTree, getGitStatus } from '../electron/gitHost'
-import { gitStatusResultSchema } from '../src/lib/ipc'
+import { getFileTree, getGitStatus, syncRemote } from '../electron/gitHost'
+import { gitStatusResultSchema, gitSyncResultSchema } from '../src/lib/ipc'
 
 let tmp: string | null = null
 
@@ -129,5 +129,44 @@ describe('getGitStatus', () => {
       isDetached: true,
       operation: 'none',
     })
+  })
+})
+
+describe('syncRemote', () => {
+  it('pushes the current branch through the main-owned Git host', async () => {
+    const root = makeWorkspace()
+    const repo = join(root, 'repo')
+    const remote = join(root, 'remote.git')
+    mkdirSync(repo)
+
+    initRepo(repo)
+    writeFileSync(join(repo, 'README.md'), 'initial\n')
+    commitPaths(repo, 'initial', ['README.md'])
+    runGit(root, ['init', '--bare', remote])
+    runGit(repo, ['remote', 'add', 'origin', remote])
+    runGit(repo, ['push', '-u', 'origin', 'main'])
+
+    writeFileSync(join(repo, 'README.md'), 'changed\n')
+    commitPaths(repo, 'change readme', ['README.md'])
+
+    const result = await syncRemote(repo, 'push')
+
+    expect(gitSyncResultSchema.parse(result)).toEqual(result)
+    expect(result).toMatchObject({ ok: true, action: 'push' })
+    expect(runGit(root, ['--git-dir', remote, 'log', '--oneline', '-1'])).toContain('change readme')
+  })
+
+  it('returns a typed failure when pushing without an upstream', async () => {
+    const repo = makeWorkspace()
+    initRepo(repo)
+    writeFileSync(join(repo, 'README.md'), 'initial\n')
+    commitPaths(repo, 'initial', ['README.md'])
+
+    const result = await syncRemote(repo, 'push')
+
+    expect(gitSyncResultSchema.parse(result)).toEqual(result)
+    expect(result.ok).toBe(false)
+    expect(result.action).toBe('push')
+    expect(result.output).not.toHaveLength(0)
   })
 })

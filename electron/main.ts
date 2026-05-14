@@ -22,6 +22,7 @@ import type {
   GitBranchInfo,
   GitFileDiff,
   GitStatusResult,
+  GitSyncResult,
   ModelInfo,
   OutputLine,
   PackageOperationResult,
@@ -55,6 +56,8 @@ import {
   gitDiffRequestSchema,
   gitDiscardSchema,
   gitStageSchema,
+  gitSyncResultSchema,
+  gitSyncSchema,
   gitUnstageSchema,
   IPC,
   loginProviderSchema,
@@ -1086,6 +1089,14 @@ function registerHandlers(): void {
     const { path: filePath } = gitDiscardSchema.parse(raw)
     const git = await getGitHost()
     await git.discardFile(state.cwd, filePath)
+  })
+
+  ipcMain.handle(IPC.GIT_SYNC, async (_event, raw: unknown): Promise<GitSyncResult | null> => {
+    if (!state?.cwd) return null
+    const { action } = gitSyncSchema.parse(raw)
+    const git = await getGitHost()
+    const result = await git.syncRemote(state.cwd, action)
+    return gitSyncResultSchema.parse(result)
   })
 
   ipcMain.handle(

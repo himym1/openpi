@@ -7,7 +7,7 @@
 
 import { ChevronsUp, Search } from 'lucide-solid'
 import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js'
-import type { GitChangedFile, GitFileDiff, GitStatusResult } from '../../lib/ipc'
+import type { GitChangedFile, GitFileDiff, GitStatusResult, GitSyncAction } from '../../lib/ipc'
 import { FileTree } from './FileTree'
 
 interface GitPanelProps {
@@ -42,7 +42,9 @@ export function GitPanel(props: GitPanelProps) {
   const [status, setStatus] = createSignal<GitStatusResult | null>(null)
   const [commitMessage, setCommitMessage] = createSignal('')
   const [isCommitting, setIsCommitting] = createSignal(false)
+  const [syncingAction, setSyncingAction] = createSignal<GitSyncAction | null>(null)
   const [commitError, setCommitError] = createSignal<string | null>(null)
+  const [syncMessage, setSyncMessage] = createSignal<string | null>(null)
   const [loadingDiff, setLoadingDiff] = createSignal<string | null>(null)
   const [localActiveTab, setLocalActiveTab] = createSignal<'changes' | 'files'>('changes')
   const [collapseAllCount, setCollapseAllCount] = createSignal(0)
@@ -121,6 +123,33 @@ export function GitPanel(props: GitPanelProps) {
     if (nextStatus && mounted) setStatus(nextStatus)
   }
 
+  const handleSync = async (action: GitSyncAction) => {
+    const current = status()
+    if (!current || syncingAction()) return
+    if (action !== 'fetch' && !current.upstream) {
+      setSyncMessage('Set an upstream before pulling or pushing.')
+      return
+    }
+    if ((action === 'pull' || action === 'pull-rebase') && totalChanged() > 0) {
+      setSyncMessage('Commit, stash, or discard local changes before pulling.')
+      return
+    }
+
+    setSyncingAction(action)
+    setSyncMessage(null)
+    try {
+      const result = await window.openpi.git.sync(action)
+      if (!mounted || !result) return
+      setSyncMessage(result.output)
+      const nextStatus = await window.openpi.git.getStatus()
+      if (nextStatus) setStatus(nextStatus)
+    } catch (err) {
+      if (mounted) setSyncMessage(String(err))
+    } finally {
+      if (mounted) setSyncingAction(null)
+    }
+  }
+
   const handleCommit = async (push = false) => {
     const current = status()
     const message = commitMessage().trim()
@@ -171,6 +200,12 @@ export function GitPanel(props: GitPanelProps) {
     if (current.ahead > 0) parts.push(`↑${current.ahead}`)
     if (current.behind > 0) parts.push(`↓${current.behind}`)
     return parts.join(' ')
+  })
+  const syncBlocked = createMemo(() => {
+    const current = status()
+    return (
+      !current || current.operation !== 'none' || current.hasConflicts || syncingAction() !== null
+    )
   })
 
   return (
@@ -234,7 +269,52 @@ export function GitPanel(props: GitPanelProps) {
             <Show when={status()?.hasConflicts}>
               <span class="git-warning-chip">conflicts</span>
             </Show>
+            <div class="git-sync-menu">
+              <button type="button" class="git-sync-btn" disabled={syncBlocked()}>
+                {syncingAction() ? 'Syncing…' : 'Sync'}
+              </button>
+              <div class="git-sync-popover">
+                <button
+                  type="button"
+                  onClick={() => void handleSync('fetch')}
+                  disabled={syncBlocked()}
+                >
+                  Fetch
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSync('pull')}
+                  disabled={syncBlocked() || !status()?.upstream || totalChanged() > 0}
+                >
+                  Pull
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSync('pull-rebase')}
+                  disabled={syncBlocked() || !status()?.upstream || totalChanged() > 0}
+                >
+                  Pull (Rebase)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSync('push')}
+                  disabled={syncBlocked() || !status()?.upstream}
+                >
+                  Push
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  title="Force push requires protected-action confirmation"
+                >
+                  Force Push
+                </button>
+              </div>
+            </div>
           </div>
+          <Show when={syncMessage()}>
+            <div class="git-sync-message">{syncMessage()}</div>
+          </Show>
         </Show>
       </div>
 
