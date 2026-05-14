@@ -5104,27 +5104,39 @@ input::placeholder {
   background: rgba(251, 146, 60, 0.08);
 }
 
+.git-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  color: var(--graphite);
+  transition: background-color 150ms, color 150ms;
+  flex-shrink: 0;
+}
+
+.git-icon-btn:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--steel);
+}
+
+.git-icon-btn:active:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.git-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .git-sync-menu {
   position: relative;
   margin-left: auto;
 }
 
-.git-sync-btn {
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-xs);
-  background: var(--surface-soft);
-  color: var(--graphite);
-  font-size: 10px;
-  cursor: pointer;
-}
-
-.git-sync-btn:disabled {
-  color: var(--ash);
-  cursor: not-allowed;
-  opacity: 0.7;
-}
 
 .git-sync-popover {
   display: none;

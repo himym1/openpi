@@ -5,8 +5,9 @@
  * ALL git mutations go through window.openpi.git.* → Electron main.
  */
 
-import { ChevronsUp, Search } from 'lucide-solid'
+import { ChevronsUp, Search, ArrowUpDown } from 'lucide-solid'
 import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js'
+
 import type {
   GitBranchRef,
   GitChangedFile,
@@ -363,8 +364,14 @@ export function GitPanel(props: GitPanelProps) {
               <span class="git-warning-chip">conflicts</span>
             </Show>
             <div class="git-sync-menu">
-              <button type="button" class="git-sync-btn" disabled={syncBlocked()}>
-                {syncingAction() ? 'Syncing…' : 'Sync'}
+              <button
+                type="button"
+                class="git-icon-btn"
+                disabled={syncBlocked()}
+                title={syncingAction() ? 'Syncing...' : 'Sync remote'}
+                aria-label="Sync with remote"
+              >
+                <ArrowUpDown size={16} />
               </button>
               <div class="git-sync-popover">
                 <button
@@ -635,8 +642,14 @@ export function GitPanel(props: GitPanelProps) {
               }}
               placeholder="Search commits…"
             />
-            <button type="button" class="git-stage-all-btn" onClick={() => void loadHistory()}>
-              Search
+            <button
+              type="button"
+              class="git-icon-btn"
+              onClick={() => void loadHistory()}
+              title="Search history"
+              aria-label="Search history"
+            >
+              <Search size={16} />
             </button>
           </div>
           <div class="git-history-container">
