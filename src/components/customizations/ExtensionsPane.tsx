@@ -201,7 +201,8 @@ export function ExtensionsPane(props: ExtensionsPaneProps) {
         <ShieldAlert size={14} />
         <p>
           Review source before enabling: extensions may execute shell commands, read files, mutate
-          tool calls, intercept prompts, and prompt users through <code>ctx.ui</code>.
+          tool calls, intercept prompts, and prompt users through <code>ctx.ui</code>. MCP server
+          integration requires an extension or Pi package — Pi does not natively embed MCP.
         </p>
       </section>
 
