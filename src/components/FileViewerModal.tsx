@@ -13,7 +13,7 @@
  * Images rendered via localfile:// — no readFile call.
  */
 
-import { Code2, FileText, Maximize2, Minimize2, PanelRight, Plus, X } from 'lucide-solid'
+import { Code2, FileText, Maximize2, Minimize2, PanelRight, Plus, Save, X } from 'lucide-solid'
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
 import { FileIcon } from '../lib/fileIcons'
 import type { NewFileLineComment } from '../lib/fileLineComments'
@@ -549,10 +549,16 @@ export function FileViewerModal(props: FileViewerModalProps) {
   const [truncated, setTruncated] = createSignal(false)
   const [mode, setMode] = createSignal<ViewMode>('edit')
   const [maximized, setMaximized] = createSignal(false)
+  const [saving, setSaving] = createSignal(false)
+  const [saveStatus, setSaveStatus] = createSignal<'idle' | 'saved' | 'error'>('idle')
+  const [saveError, setSaveError] = createSignal<string | null>(null)
 
   let textareaRef: HTMLTextAreaElement | undefined
   let previewScrollRef: HTMLDivElement | undefined
+  let saveStatusTimer: ReturnType<typeof setTimeout> | undefined
   let isSyncingScroll = false
+
+  const isDirty = createMemo(() => content() !== null && editBuffer() !== content())
 
   const syncEditorToPreview = () => {
     if (!textareaRef || !previewScrollRef || isSyncingScroll) return
@@ -610,12 +616,39 @@ export function FileViewerModal(props: FileViewerModalProps) {
     }
   })
 
+  const handleSave = async () => {
+    if (isImage() || truncated() || content() === null || !isDirty() || saving()) return
+    setSaving(true)
+    setSaveStatus('idle')
+    setSaveError(null)
+    try {
+      await window.openpi.writeFile(normalizedPath(), editBuffer())
+      setContent(editBuffer())
+      setSaveStatus('saved')
+      if (saveStatusTimer) clearTimeout(saveStatusTimer)
+      saveStatusTimer = setTimeout(() => setSaveStatus('idle'), 1400)
+    } catch (err) {
+      setSaveStatus('error')
+      setSaveError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   createEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!props.background && e.key === 'Escape') props.onClose()
+      if (!props.background && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        void handleSave()
+      }
     }
     window.addEventListener('keydown', handler)
     onCleanup(() => window.removeEventListener('keydown', handler))
+  })
+
+  onCleanup(() => {
+    if (saveStatusTimer) clearTimeout(saveStatusTimer)
   })
 
   const toggleMode = () => {
@@ -653,9 +686,30 @@ export function FileViewerModal(props: FileViewerModalProps) {
             <Show when={truncated()}>
               <span class="fv-topbar-badge">truncated</span>
             </Show>
+            <Show when={!isImage() && isDirty()}>
+              <span class="fv-topbar-badge fv-topbar-badge--dirty">unsaved</span>
+            </Show>
+            <Show when={saveStatus() === 'saved'}>
+              <span class="fv-topbar-badge fv-topbar-badge--saved">saved</span>
+            </Show>
+            <Show when={saveStatus() === 'error'}>
+              <span class="fv-topbar-badge fv-topbar-badge--error">save failed</span>
+            </Show>
           </div>
 
           <div class="fv-topbar-actions">
+            <Show when={!isImage()}>
+              <button
+                type="button"
+                class={`fv-tb-btn${isDirty() ? ' fv-tb-btn--dirty' : ''}`}
+                title={truncated() ? 'Cannot save truncated file' : 'Save (⌘S)'}
+                onClick={() => void handleSave()}
+                disabled={!isDirty() || saving() || truncated()}
+              >
+                <Save size={14} strokeWidth={1.8} />
+              </button>
+            </Show>
+
             <Show when={!isImage()}>
               <button
                 type="button"
@@ -709,6 +763,10 @@ export function FileViewerModal(props: FileViewerModalProps) {
         </div>
 
         <div class="fv-body">
+          <Show when={saveError()}>
+            <div class="fv-state-msg fv-state-msg--error">{saveError()}</div>
+          </Show>
+
           <Show when={isImage()}>
             <div class="fv-image-body">
               <img src={imgSrc()} alt={filename()} class="fv-image" />

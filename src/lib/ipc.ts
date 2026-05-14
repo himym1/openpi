@@ -65,7 +65,11 @@ export const IPC = {
   GIT_HISTORY: 'openpi:git-history',
   GIT_FILE_TREE: 'openpi:git-file-tree',
   GIT_PANEL_MOUNTED: 'openpi:git-panel-mounted',
+  GIT_GENERATE_COMMIT_MSG: 'openpi:git-generate-commit-msg',
+  // main → renderer
+  AGENT_CHANGED_FILES: 'openpi:agent-changed-files',
   READ_FILE: 'openpi:read-file',
+  WRITE_FILE: 'openpi:write-file',
   SEARCH_FILE_CONTENTS: 'openpi:search-file-contents',
   LIST_PROMPT_TEMPLATES: 'openpi:list-prompt-templates',
   FFF_FILE_SEARCH: 'openpi:fff-file-search',
@@ -633,6 +637,8 @@ export const gitCommitSchema = z.object({
   paths: z.array(z.string()).min(1),
   message: z.string().min(1),
   push: z.boolean().default(false),
+  amend: z.boolean().default(false),
+  signoff: z.boolean().default(false),
 })
 export type GitCommitRequest = z.infer<typeof gitCommitSchema>
 
@@ -712,6 +718,11 @@ export const gitHistoryResultSchema = z.object({
 })
 export type GitHistoryResult = z.infer<typeof gitHistoryResultSchema>
 
+export const generateCommitMessageResultSchema = z.object({
+  message: z.string(),
+})
+export type GenerateCommitMessageResult = z.infer<typeof generateCommitMessageResultSchema>
+
 // ─── File tree schema ──────────────────────────────────────────────────
 
 /** Recursive type — validated with z.lazy() */
@@ -765,13 +776,20 @@ export const fileContentHitSchema = z.object({
 })
 export type FileContentHit = z.infer<typeof fileContentHitSchema>
 
-// ─── File content (read-only) ────────────────────────────────────────────────
+// ─── File content ───────────────────────────────────────────────────────────
 
 export const readFileRequestSchema = z.object({
   /** Path relative to workspace cwd — validated against cwd in Electron main */
   path: z.string().min(1),
 })
 export type ReadFileRequest = z.infer<typeof readFileRequestSchema>
+
+export const writeFileRequestSchema = z.object({
+  /** Path relative to workspace cwd — validated against cwd in Electron main */
+  path: z.string().min(1),
+  content: z.string(),
+})
+export type WriteFileRequest = z.infer<typeof writeFileRequestSchema>
 
 export const fileContentSchema = z.object({
   content: z.string(),

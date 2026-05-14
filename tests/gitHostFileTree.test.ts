@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   checkoutBranch,
+  commitFiles,
+  generateCommitMessage,
   getFileTree,
   getGitHistory,
   getGitRefs,
@@ -268,5 +270,103 @@ describe('getGitHistory', () => {
     const history = await getGitHistory(repo, 'release', 10)
 
     expect(history.commits.map((commit) => commit.message)).toEqual(['prepare release notes'])
+  })
+})
+
+// ─── generateCommitMessage ───────────────────────────────────────────────
+
+describe('generateCommitMessage', () => {
+  it('produces feat: for added files', () => {
+    const files = [
+      {
+        path: 'src/components/git/DiffViewer.tsx',
+        status: 'A',
+        staged: true,
+        additions: 120,
+        deletions: 0,
+      },
+    ]
+    const msg = generateCommitMessage(files as never)
+    expect(msg).toMatch(/^feat/)
+    expect(msg).toContain('DiffViewer.tsx')
+  })
+
+  it('produces chore: for deleted files', () => {
+    const files = [{ path: 'src/old.ts', status: 'D', staged: true, additions: 0, deletions: 50 }]
+    const msg = generateCommitMessage(files as never)
+    expect(msg).toMatch(/^chore/)
+    expect(msg).toContain('remove')
+  })
+
+  it('detects git scope from electron/gitHost.ts', () => {
+    const files = [
+      { path: 'electron/gitHost.ts', status: 'M', staged: true, additions: 10, deletions: 5 },
+    ]
+    const msg = generateCommitMessage(files as never)
+    expect(msg).toContain('(git)')
+  })
+
+  it('returns empty string for empty staged list', () => {
+    expect(generateCommitMessage([])).toBe('')
+  })
+})
+
+describe('commitFiles options', () => {
+  it('supports signoff commits', async () => {
+    const repo = makeWorkspace()
+    initRepo(repo)
+    writeFileSync(join(repo, 'README.md'), 'initial\n')
+    commitPaths(repo, 'initial commit', ['README.md'])
+    writeFileSync(join(repo, 'feature.txt'), 'feature\n')
+
+    await commitFiles(repo, ['feature.txt'], 'add feature', false, { signoff: true })
+
+    const body = runGit(repo, ['log', '-1', '--format=%B'])
+    expect(body).toContain('add feature')
+    expect(body).toContain('Signed-off-by: OpenPi Test <openpi@example.com>')
+  })
+
+  it('supports amending the previous commit', async () => {
+    const repo = makeWorkspace()
+    initRepo(repo)
+    writeFileSync(join(repo, 'README.md'), 'initial\n')
+    commitPaths(repo, 'initial commit', ['README.md'])
+    writeFileSync(join(repo, 'README.md'), 'initial\nupdated\n')
+
+    await commitFiles(repo, ['README.md'], 'amend initial commit', false, { amend: true })
+
+    const count = runGit(repo, ['rev-list', '--count', 'HEAD']).trim()
+    const message = runGit(repo, ['log', '-1', '--format=%s']).trim()
+    expect(count).toBe('1')
+    expect(message).toBe('amend initial commit')
+  })
+})
+
+describe('conflict status', () => {
+  it('marks conflicted files as U and sets hasConflicts', async () => {
+    const repo = makeWorkspace()
+    initRepo(repo)
+    writeFileSync(join(repo, 'README.md'), 'base\n')
+    commitPaths(repo, 'base', ['README.md'])
+
+    runGit(repo, ['checkout', '-b', 'feature'])
+    writeFileSync(join(repo, 'README.md'), 'feature\n')
+    commitPaths(repo, 'feature change', ['README.md'])
+
+    runGit(repo, ['checkout', 'main'])
+    writeFileSync(join(repo, 'README.md'), 'main\n')
+    commitPaths(repo, 'main change', ['README.md'])
+
+    try {
+      runGit(repo, ['merge', 'feature'])
+    } catch {
+      // expected conflict
+    }
+
+    const status = await getGitStatus(repo)
+
+    expect(status.hasConflicts).toBe(true)
+    expect(status.operation).toBe('merge')
+    expect(status.files).toContainEqual(expect.objectContaining({ path: 'README.md', status: 'U' }))
   })
 })

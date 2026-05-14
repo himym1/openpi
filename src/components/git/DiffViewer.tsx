@@ -1,11 +1,14 @@
 /**
- * DiffViewer — unified diff overlay.
+ * DiffViewer — side-by-side diff overlay.
  *
- * Uses a native Solid renderer instead of @pierre/diffs so line-number gutters
- * and code text are guaranteed to share the same CSS-grid row.
+ * Uses @pierre/diffs vanilla JS FileDiff component for robust side-by-side rendering,
+ * syntax highlighting via Shiki, and proper hunk structure.
+ *
+ * Authority: renderer only — no Git mutations here.
  */
 
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
+import { FileDiff, parsePatchFiles } from '@pierre/diffs'
+import { createEffect, createSignal, onCleanup, Show } from 'solid-js'
 import type { GitChangedFile, GitFileDiff } from '../../lib/ipc'
 
 interface DiffViewerProps {
@@ -16,87 +19,93 @@ interface DiffViewerProps {
   onClose: () => void
 }
 
-type DiffLineRow = {
-  type: 'context' | 'add' | 'remove'
-  oldLine: number | null
-  newLine: number | null
-  marker: ' ' | '+' | '-'
-  text: string
+// ─── Keyboard handler ──────────────────────────────────────────────────────
+
+function useKeyboardNav(
+  currentIndex: () => number,
+  totalFiles: () => number,
+  onNavigate: (i: number) => void,
+  onClose: () => void
+) {
+  createEffect(() => {
+    const idx = currentIndex()
+    const total = totalFiles()
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose()
+        return
+      }
+      if (e.key === 'ArrowLeft' && idx > 0) onNavigate(idx - 1)
+      if (e.key === 'ArrowRight' && idx < total - 1) onNavigate(idx + 1)
+    }
+    window.addEventListener('keydown', handler)
+    onCleanup(() => window.removeEventListener('keydown', handler))
+  })
 }
-type DiffRow = { type: 'hunk'; text: string } | { type: 'meta'; text: string } | DiffLineRow
 
-function isDiffLineRow(row: DiffRow): row is DiffLineRow {
-  return row.type === 'context' || row.type === 'add' || row.type === 'remove'
-}
+// ─── Pierre diff renderer ─────────────────────────────────────────────────
 
-function parseUnifiedDiff(patch: string): DiffRow[] {
-  const rows: DiffRow[] = []
-  let oldLine = 0
-  let newLine = 0
+function PierreDiffRenderer(props: { patch: string; filename: string }) {
+  let containerRef!: HTMLDivElement
+  let diffInstance: FileDiff | null = null
 
-  const patchLines = patch.endsWith('\n') ? patch.slice(0, -1).split('\n') : patch.split('\n')
+  const renderDiff = (patch: string) => {
+    if (!containerRef) return
 
-  for (const rawLine of patchLines) {
-    const hunk = rawLine.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/)
-    if (hunk) {
-      oldLine = Number(hunk[1])
-      newLine = Number(hunk[2])
-      rows.push({ type: 'hunk', text: rawLine })
-      continue
+    // parsePatchFiles takes a raw patch string and returns ParsedPatch[]
+    // each ParsedPatch has .files: FileDiffMetadata[]
+    let fileDiff: ReturnType<typeof parsePatchFiles>[number]['files'][number] | undefined
+    try {
+      const parsed = parsePatchFiles(patch)
+      fileDiff = parsed[0]?.files[0]
+    } catch (err) {
+      console.warn('[DiffViewer] Failed to parse patch:', err)
+      containerRef.innerHTML = '<div class="diff-empty">Unable to parse diff.</div>'
+      return
     }
 
-    if (rawLine.startsWith('diff --git') || rawLine.startsWith('index ')) continue
-    if (rawLine.startsWith('--- ') || rawLine.startsWith('+++ ')) continue
-
-    if (rawLine.startsWith('\\')) {
-      rows.push({ type: 'meta', text: rawLine })
-      continue
+    if (!fileDiff) {
+      containerRef.innerHTML = '<div class="diff-empty">No changes detected.</div>'
+      return
     }
 
-    if (rawLine.startsWith('-')) {
-      rows.push({ type: 'remove', oldLine, newLine: null, marker: '-', text: rawLine.slice(1) })
-      oldLine += 1
-      continue
+    // Re-use existing instance if available, otherwise create new one
+    if (!diffInstance) {
+      diffInstance = new FileDiff({
+        diffStyle: 'split', // side-by-side view
+        theme: 'pierre-dark', // built-in dark theme
+        themeType: 'dark',
+        expandUnchanged: false, // collapse large identical regions
+        disableFileHeader: true, // we render our own header above
+      })
     }
 
-    if (rawLine.startsWith('+')) {
-      rows.push({ type: 'add', oldLine: null, newLine, marker: '+', text: rawLine.slice(1) })
-      newLine += 1
-      continue
+    try {
+      diffInstance.render({ fileDiff, containerWrapper: containerRef, forceRender: true })
+    } catch (err) {
+      console.error('[DiffViewer] render error:', err)
+      containerRef.innerHTML = '<div class="diff-empty">Failed to render diff.</div>'
     }
-
-    const text = rawLine.startsWith(' ') ? rawLine.slice(1) : rawLine
-    rows.push({ type: 'context', oldLine, newLine, marker: ' ', text })
-    oldLine += 1
-    newLine += 1
   }
 
-  return rows
-}
+  // Re-render when patch or filename changes.
+  // Use containerWrapper (not fileContainer) so @pierre/diffs creates its own
+  // <diffs-container> shadow host with the correct split-view layout semantics.
+  createEffect(() => {
+    const patch = props.patch
+    // filename read for reactivity — drives language detection in pierre
+    void props.filename
+    renderDiff(patch)
+  })
 
-function UnifiedDiff(props: { patch: string }) {
-  const rows = createMemo(() => parseUnifiedDiff(props.patch))
+  onCleanup(() => {
+    if (diffInstance) {
+      diffInstance.cleanUp()
+      diffInstance = null
+    }
+  })
 
-  return (
-    <div class="odiff" role="table" aria-label="Unified diff">
-      <For each={rows()}>
-        {(row) =>
-          isDiffLineRow(row) ? (
-            <div class={`odiff-row odiff-row--${row.type}`} role="row">
-              <span class="odiff-ln odiff-ln--old">{row.oldLine ?? ''}</span>
-              <span class="odiff-ln odiff-ln--new">{row.newLine ?? ''}</span>
-              <span class="odiff-marker">{row.marker}</span>
-              <code class="odiff-code">{row.text || ' '}</code>
-            </div>
-          ) : (
-            <div class={`odiff-row odiff-row--${row.type}`} role="row">
-              <span class="odiff-hunk-text">{row.text}</span>
-            </div>
-          )
-        }
-      </For>
-    </div>
-  )
+  return <div ref={containerRef!} class="pierre-diff-container" />
 }
 
 // ─── DiffViewer ────────────────────────────────────────────────────────────
@@ -104,22 +113,12 @@ function UnifiedDiff(props: { patch: string }) {
 export function DiffViewer(props: DiffViewerProps) {
   const [copyDone, setCopyDone] = createSignal(false)
 
-  createEffect(() => {
-    const currentIndex = props.currentIndex
-    const totalFiles = props.allFiles.length
-
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        props.onClose()
-        return
-      }
-      if (e.key === 'ArrowLeft' && currentIndex > 0) props.onNavigate(currentIndex - 1)
-      if (e.key === 'ArrowRight' && currentIndex < totalFiles - 1)
-        props.onNavigate(currentIndex + 1)
-    }
-    window.addEventListener('keydown', handler)
-    onCleanup(() => window.removeEventListener('keydown', handler))
-  })
+  useKeyboardNav(
+    () => props.currentIndex,
+    () => props.allFiles.length,
+    props.onNavigate,
+    props.onClose
+  )
 
   const copyPath = () => {
     void navigator.clipboard.writeText(props.diff.path)
@@ -165,7 +164,7 @@ export function DiffViewer(props: DiffViewerProps) {
           </button>
         </div>
 
-        <div class="diff-filepath" onClick={copyPath} title="Click to copy path">
+        <button type="button" class="diff-filepath" onClick={copyPath} title="Click to copy path">
           <Show when={dir()}>
             <span class="diff-filepath-dir">{dir()}/</span>
           </Show>
@@ -179,7 +178,7 @@ export function DiffViewer(props: DiffViewerProps) {
           <Show when={copyDone()}>
             <span class="diff-copy-flash"> copied</span>
           </Show>
-        </div>
+        </button>
 
         <button type="button" class="diff-close-btn" onClick={props.onClose} title="Close (Esc)">
           ✕
@@ -191,7 +190,7 @@ export function DiffViewer(props: DiffViewerProps) {
           when={props.diff.rawPatch}
           fallback={<div class="diff-empty">No diff available for this file.</div>}
         >
-          <UnifiedDiff patch={props.diff.rawPatch} />
+          <PierreDiffRenderer patch={props.diff.rawPatch} filename={props.diff.path} />
         </Show>
       </div>
     </div>

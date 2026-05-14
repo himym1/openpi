@@ -100,6 +100,7 @@ import {
   unarchiveSessionsRequestSchema,
   workspaceSummaryInfoSchema,
   workspaceSummaryRequestSchema,
+  writeFileRequestSchema,
 } from '../src/lib/ipc'
 import {
   NOTIFICATION_PREFERENCES,
@@ -524,6 +525,20 @@ function handleSidecarMessage(msg: SidecarMessage): void {
           `OpenPi finished working${cwd ? ` in ${path.basename(cwd)}` : ''}.`
         )
         playSoundEffect('soundAgentStatus')
+        // Notify renderer if agent left uncommitted changes behind
+        if (cwd) {
+          void getGitHost().then(async (git) => {
+            try {
+              const status = await git.getGitStatus(cwd)
+              const changed = status?.files.length ?? 0
+              if (changed > 0) {
+                mainWindow?.webContents.send(IPC.AGENT_CHANGED_FILES, { count: changed })
+              }
+            } catch {
+              // non-fatal — git may not be available in all workspaces
+            }
+          })
+        }
       }
 
       if (event.type === 'extension_error') {
@@ -1087,9 +1102,9 @@ function registerHandlers(): void {
 
   ipcMain.handle(IPC.GIT_COMMIT, async (_event, raw: unknown): Promise<void> => {
     if (!state?.cwd) return
-    const { paths, message, push } = gitCommitSchema.parse(raw)
+    const { paths, message, push, amend, signoff } = gitCommitSchema.parse(raw)
     const git = await getGitHost()
-    await git.commitFiles(state.cwd, paths, message, push)
+    await git.commitFiles(state.cwd, paths, message, push, { amend, signoff })
   })
 
   ipcMain.handle(IPC.GIT_DISCARD, async (_event, raw: unknown): Promise<void> => {
@@ -1145,6 +1160,18 @@ function registerHandlers(): void {
   )
 
   ipcMain.handle(
+    IPC.GIT_GENERATE_COMMIT_MSG,
+    async (): Promise<import('../src/lib/ipc').GenerateCommitMessageResult | null> => {
+      if (!state?.cwd) return null
+      const git = await getGitHost()
+      const status = await git.getGitStatus(state.cwd)
+      const staged = status?.files.filter((f) => f.staged) ?? []
+      const message = git.generateCommitMessage(staged)
+      return { message }
+    }
+  )
+
+  ipcMain.handle(
     IPC.SEARCH_FILE_CONTENTS,
     async (_event, raw: unknown): Promise<FileContentHit[]> => {
       if (!state?.cwd) return []
@@ -1172,6 +1199,17 @@ function registerHandlers(): void {
     } catch {
       return null
     }
+  })
+
+  ipcMain.handle(IPC.WRITE_FILE, (_event, raw: unknown): void => {
+    if (!state?.cwd) throw new Error('No active workspace')
+    const { path: relPath, content } = writeFileRequestSchema.parse(raw)
+    const full = path.resolve(state.cwd, relPath)
+    const sep = path.sep
+    if (full !== state.cwd && !full.startsWith(state.cwd + sep)) {
+      throw new Error('Refusing to write outside workspace')
+    }
+    fs.writeFileSync(full, content, 'utf-8')
   })
 
   // ── Prompt template listing (slash command completions) ────────────────────

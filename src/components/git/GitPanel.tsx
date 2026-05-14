@@ -5,7 +5,7 @@
  * ALL git mutations go through window.openpi.git.* → Electron main.
  */
 
-import { ChevronsUp, Search, ArrowUpDown } from 'lucide-solid'
+import { ArrowUp, ArrowUpDown, ChevronDown, ChevronsUp, Search, Sparkles } from 'lucide-solid'
 import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js'
 
 import type {
@@ -18,6 +18,7 @@ import type {
   GitStatusResult,
   GitSyncAction,
 } from '../../lib/ipc'
+import { ConflictResolverModal } from './ConflictResolverModal'
 import { FileTree } from './FileTree'
 
 type GitPanelTab = 'changes' | 'files' | 'history'
@@ -54,6 +55,11 @@ export function GitPanel(props: GitPanelProps) {
   const [status, setStatus] = createSignal<GitStatusResult | null>(null)
   const [commitMessage, setCommitMessage] = createSignal('')
   const [isCommitting, setIsCommitting] = createSignal(false)
+  const [isGeneratingMsg, setIsGeneratingMsg] = createSignal(false)
+  const [agentChangedCount, setAgentChangedCount] = createSignal<number | null>(null)
+  const [commitOptionsOpen, setCommitOptionsOpen] = createSignal(false)
+  const [commitAmend, setCommitAmend] = createSignal(false)
+  const [commitSignoff, setCommitSignoff] = createSignal(false)
   const [syncingAction, setSyncingAction] = createSignal<GitSyncAction | null>(null)
   const [commitError, setCommitError] = createSignal<string | null>(null)
   const [syncMessage, setSyncMessage] = createSignal<string | null>(null)
@@ -71,6 +77,7 @@ export function GitPanel(props: GitPanelProps) {
   const [selectedCommit, setSelectedCommit] = createSignal<GitHistoryCommit | null>(null)
   const [localActiveTab, setLocalActiveTab] = createSignal<GitPanelTab>('changes')
   const [collapseAllCount, setCollapseAllCount] = createSignal(0)
+  const [conflictPath, setConflictPath] = createSignal<string | null>(null)
   let mounted = true
 
   const activeTab = () => props.activeTab ?? localActiveTab()
@@ -81,6 +88,11 @@ export function GitPanel(props: GitPanelProps) {
 
   onMount(() => {
     window.openpi.notifyGitPanelMounted()
+    // Listen for agent-changed-files events from main process
+    const unsub = window.openpi.git.onAgentChangedFiles((count) => {
+      setAgentChangedCount(count)
+    })
+    return unsub
   })
 
   createEffect(() => {
@@ -124,6 +136,11 @@ export function GitPanel(props: GitPanelProps) {
     const current = status()
     if (!current) return
 
+    if (file.status === 'U') {
+      setConflictPath(file.path)
+      return
+    }
+
     setLoadingDiff(file.path)
     try {
       const diff = await window.openpi.git.getDiff(file.path)
@@ -155,7 +172,7 @@ export function GitPanel(props: GitPanelProps) {
     const current = status()
     if (!current) return
 
-    const unstaged = current.files.filter((f) => !f.staged)
+    const unstaged = current.files.filter((f) => !f.staged && f.status !== 'U')
     for (const file of unstaged) {
       await window.openpi.git.stage(file.path)
     }
@@ -223,6 +240,18 @@ export function GitPanel(props: GitPanelProps) {
     }
   }
 
+  const handleGenerateCommitMessage = async () => {
+    setIsGeneratingMsg(true)
+    try {
+      const result = await window.openpi.git.generateCommitMessage()
+      if (result?.message) setCommitMessage(result.message)
+    } catch (err) {
+      console.error('Failed to generate commit message:', err)
+    } finally {
+      setIsGeneratingMsg(false)
+    }
+  }
+
   const handleCommit = async (push = false) => {
     const current = status()
     const message = commitMessage().trim()
@@ -238,9 +267,15 @@ export function GitPanel(props: GitPanelProps) {
     setCommitError(null)
 
     try {
-      await window.openpi.git.commit(staged, message, push)
+      await window.openpi.git.commit(staged, message, push, {
+        amend: commitAmend(),
+        signoff: commitSignoff(),
+      })
       if (mounted) {
         setCommitMessage('')
+        setCommitOptionsOpen(false)
+        setCommitAmend(false)
+        setCommitSignoff(false)
         const nextStatus = await window.openpi.git.getStatus()
         if (nextStatus) setStatus(nextStatus)
       }
@@ -251,14 +286,19 @@ export function GitPanel(props: GitPanelProps) {
     }
   }
 
-  const stagedFiles = createMemo(() => status()?.files.filter((f) => f.staged) ?? [])
+  const conflictFiles = createMemo(() => status()?.files.filter((f) => f.status === 'U') ?? [])
+  const stagedFiles = createMemo(
+    () => status()?.files.filter((f) => f.staged && f.status !== 'U') ?? []
+  )
   const unstagedFiles = createMemo(
-    () => status()?.files.filter((f) => !f.staged && f.status !== '?') ?? []
+    () => status()?.files.filter((f) => !f.staged && f.status !== '?' && f.status !== 'U') ?? []
   )
   const untrackedFiles = createMemo(
     () => status()?.files.filter((f) => !f.staged && f.status === '?') ?? []
   )
-  const stageableFiles = createMemo(() => status()?.files.filter((f) => !f.staged) ?? [])
+  const stageableFiles = createMemo(
+    () => status()?.files.filter((f) => !f.staged && f.status !== 'U') ?? []
+  )
   const totalChanged = createMemo(() => status()?.files.length ?? 0)
   const branchLabel = createMemo(() => {
     const current = status()
@@ -300,6 +340,13 @@ export function GitPanel(props: GitPanelProps) {
           <div class="git-panel-tabs">
             <button
               type="button"
+              class={`git-panel-tab ${activeTab() === 'history' ? 'is-active' : ''}`}
+              onClick={() => setActiveTab('history')}
+            >
+              History
+            </button>
+            <button
+              type="button"
               class={`git-panel-tab ${activeTab() === 'changes' ? 'is-active' : ''}`}
               onClick={() => setActiveTab('changes')}
             >
@@ -314,13 +361,6 @@ export function GitPanel(props: GitPanelProps) {
               onClick={() => setActiveTab('files')}
             >
               Files
-            </button>
-            <button
-              type="button"
-              class={`git-panel-tab ${activeTab() === 'history' ? 'is-active' : ''}`}
-              onClick={() => setActiveTab('history')}
-            >
-              History
             </button>
           </div>
 
@@ -504,6 +544,22 @@ export function GitPanel(props: GitPanelProps) {
 
       <Show when={activeTab() === 'changes'}>
         <div class="git-panel-body">
+          <Show when={agentChangedCount() !== null}>
+            <div class="git-agent-banner">
+              <span>
+                ✨ Agent modified {agentChangedCount()} file{agentChangedCount() !== 1 ? 's' : ''} —
+                review before committing
+              </span>
+              <button
+                type="button"
+                class="git-agent-banner-dismiss"
+                onClick={() => setAgentChangedCount(null)}
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          </Show>
           <Show when={status()} fallback={<div class="git-panel-empty">Loading git status…</div>}>
             <Show when={totalChanged() === 0}>
               <div class="git-panel-empty">No changes to commit</div>
@@ -521,6 +577,25 @@ export function GitPanel(props: GitPanelProps) {
                     Stage All
                   </button>
                 </div>
+              </Show>
+
+              <Show when={conflictFiles().length > 0}>
+                <section class="git-section git-section--conflicts">
+                  <div class="git-section-title">
+                    Conflicts
+                    <span class="git-section-count">{conflictFiles().length}</span>
+                  </div>
+                  <For each={conflictFiles()}>
+                    {(file) => (
+                      <GitFileRow
+                        file={file}
+                        loadingDiff={loadingDiff()}
+                        onFileClick={handleFileClick}
+                        onStageToggle={handleStageToggle}
+                      />
+                    )}
+                  </For>
+                </section>
               </Show>
 
               <Show when={stagedFiles().length > 0}>
@@ -584,36 +659,95 @@ export function GitPanel(props: GitPanelProps) {
 
           <Show when={status() && stagedFiles().length > 0}>
             <div class="git-commit-area">
-              <textarea
-                class="git-commit-input"
-                placeholder="Commit message…"
-                value={commitMessage()}
-                onInput={(e) => setCommitMessage(e.currentTarget.value)}
-                rows={3}
-                disabled={isCommitting()}
-              />
+              <div class="git-commit-composer">
+                <textarea
+                  class="git-commit-input"
+                  placeholder="Enter commit message"
+                  value={commitMessage()}
+                  onInput={(e) => setCommitMessage(e.currentTarget.value)}
+                  rows={4}
+                  disabled={isCommitting()}
+                />
+                <div class="git-commit-composer-footer">
+                  <button
+                    type="button"
+                    class="git-generate-msg-btn"
+                    title="Generate commit message from staged diff"
+                    aria-label="Generate commit message from staged diff"
+                    disabled={isGeneratingMsg() || isCommitting()}
+                    onClick={() => void handleGenerateCommitMessage()}
+                  >
+                    <Show
+                      when={!isGeneratingMsg()}
+                      fallback={<span class="git-generate-spinner">⋯</span>}
+                    >
+                      <Sparkles size={14} />
+                    </Show>
+                  </button>
+                  <div class="git-commit-mode-actions">
+                    <button
+                      type="button"
+                      class="git-commit-mode-btn"
+                      onClick={() => void handleCommit(false)}
+                      disabled={isCommitting() || !commitMessage().trim()}
+                    >
+                      {isCommitting()
+                        ? 'Committing…'
+                        : commitAmend()
+                          ? 'Amend Staged'
+                          : 'Commit Staged'}
+                    </button>
+                    <button
+                      type="button"
+                      class={`git-commit-mode-menu-btn ${commitOptionsOpen() ? 'is-active' : ''}`}
+                      disabled={isCommitting() || !commitMessage().trim()}
+                      title="Commit options"
+                      aria-label="Commit options"
+                      aria-expanded={commitOptionsOpen()}
+                      onClick={() => setCommitOptionsOpen((open) => !open)}
+                    >
+                      <ChevronDown size={14} />
+                    </button>
+                    <Show when={commitOptionsOpen()}>
+                      <div class="git-commit-options-menu">
+                        <button
+                          type="button"
+                          class="git-commit-option-row"
+                          onClick={() => setCommitAmend((value) => !value)}
+                        >
+                          <span class="git-commit-option-check">{commitAmend() ? '✓' : ''}</span>
+                          <span>
+                            <strong>Amend</strong>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          class="git-commit-option-row"
+                          onClick={() => setCommitSignoff((value) => !value)}
+                        >
+                          <span class="git-commit-option-check">{commitSignoff() ? '✓' : ''}</span>
+                          <span>
+                            <strong>Signoff</strong>
+                          </span>
+                        </button>
+                      </div>
+                    </Show>
+                    <button
+                      type="button"
+                      class="git-commit-push-btn"
+                      onClick={() => void handleCommit(true)}
+                      disabled={isCommitting() || !commitMessage().trim()}
+                      title="Commit and push"
+                      aria-label="Commit and push"
+                    >
+                      <ArrowUp size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
               <Show when={commitError()}>
                 <div class="git-commit-error">{commitError()}</div>
               </Show>
-              <div class="git-commit-actions">
-                <button
-                  type="button"
-                  class="git-commit-btn"
-                  onClick={() => void handleCommit(false)}
-                  disabled={isCommitting() || !commitMessage().trim()}
-                >
-                  {isCommitting() ? '…' : 'Commit'}
-                </button>
-                <button
-                  type="button"
-                  class="git-commit-push-btn"
-                  onClick={() => void handleCommit(true)}
-                  disabled={isCommitting() || !commitMessage().trim()}
-                  title="Commit and push"
-                >
-                  ↑
-                </button>
-              </div>
             </div>
           </Show>
         </div>
@@ -681,6 +815,19 @@ export function GitPanel(props: GitPanelProps) {
           </div>
         </div>
       </Show>
+
+      <Show when={conflictPath()}>
+        {(path) => (
+          <ConflictResolverModal
+            path={path()}
+            onClose={() => setConflictPath(null)}
+            onSaved={async () => {
+              const nextStatus = await window.openpi.git.getStatus()
+              if (nextStatus && mounted) setStatus(nextStatus)
+            }}
+          />
+        )}
+      </Show>
     </aside>
   )
 }
@@ -695,7 +842,10 @@ function GitHistoryRow(props: GitHistoryRowProps) {
   const formattedDate = createMemo(() => {
     const timestamp = Date.parse(props.commit.date)
     if (!Number.isFinite(timestamp)) return props.commit.date
-    return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    return new Date(timestamp).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    })
   })
 
   return (
@@ -726,7 +876,11 @@ type GitHistoryDetailsPaneProps = {
   commit: GitHistoryCommit
 }
 
-function parseFileStats(statsStr: string): { files: string[]; added: number; removed: number } {
+function parseFileStats(statsStr: string): {
+  files: string[]
+  added: number
+  removed: number
+} {
   const lines = statsStr.split('\n').filter((line) => line.trim())
   const files: string[] = []
   let added = 0

@@ -187,8 +187,12 @@ const api = {
       ipcRenderer.invoke(IPC.GIT_STAGE, { path: filePath }),
     unstage: (filePath: string): Promise<void> =>
       ipcRenderer.invoke(IPC.GIT_UNSTAGE, { path: filePath }),
-    commit: (paths: string[], message: string, push = false): Promise<void> =>
-      ipcRenderer.invoke(IPC.GIT_COMMIT, { paths, message, push }),
+    commit: (
+      paths: string[],
+      message: string,
+      push = false,
+      options: { amend?: boolean; signoff?: boolean } = {}
+    ): Promise<void> => ipcRenderer.invoke(IPC.GIT_COMMIT, { paths, message, push, ...options }),
     discard: (filePath: string): Promise<void> =>
       ipcRenderer.invoke(IPC.GIT_DISCARD, { path: filePath }),
     sync: (action: GitSyncAction): Promise<GitSyncResult | null> =>
@@ -209,6 +213,14 @@ const api = {
       return () => ipcRenderer.removeListener(IPC.FILE_TREE_CHANGED, handler)
     },
     getFileTree: (): Promise<FileTreeResult | null> => ipcRenderer.invoke(IPC.GIT_FILE_TREE),
+    generateCommitMessage: (): Promise<{ message: string } | null> =>
+      ipcRenderer.invoke(IPC.GIT_GENERATE_COMMIT_MSG),
+    onAgentChangedFiles: (cb: (count: number) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, payload: { count: number }) =>
+        cb(payload.count)
+      ipcRenderer.on(IPC.AGENT_CHANGED_FILES, handler)
+      return () => ipcRenderer.removeListener(IPC.AGENT_CHANGED_FILES, handler)
+    },
   },
 
   searchFileContents: (
@@ -221,6 +233,8 @@ const api = {
 
   readFile: (relPath: string): Promise<FileContent | null> =>
     ipcRenderer.invoke(IPC.READ_FILE, { path: relPath }),
+  writeFile: (relPath: string, content: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.WRITE_FILE, { path: relPath, content }),
   listPromptTemplates: (): Promise<PromptTemplate[]> =>
     ipcRenderer.invoke(IPC.LIST_PROMPT_TEMPLATES),
 
