@@ -236,7 +236,7 @@ describe('git refs and branch checkout', () => {
 })
 
 describe('getGitHistory', () => {
-  it('returns recent commits with author, refs, short hashes, and graph', async () => {
+  it('returns recent commits with author, refs, short hashes, graph, and file stats', async () => {
     const repo = makeWorkspace()
     initRepo(repo)
     writeFileSync(join(repo, 'README.md'), 'initial\n')
@@ -254,6 +254,7 @@ describe('getGitHistory', () => {
     })
     expect(history.commits[0]?.shortHash).toHaveLength(7)
     expect(history.commits[0]?.graph).toBeDefined()
+    expect(typeof history.commits[0]?.stats).toBe('string')
   })
 
   it('filters commits by query in the Git host', async () => {

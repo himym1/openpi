@@ -5484,6 +5484,62 @@ input::placeholder {
   overflow-y: auto;
 }
 
+.git-history-details-files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.git-history-files-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.git-history-files-header .label {
+  font-weight: 600;
+  color: var(--ash);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.git-history-file-stats {
+  display: flex;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.git-history-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 0 0 4px 0;
+}
+
+.git-history-file-item {
+  display: flex;
+  align-items: center;
+  padding: 3px 6px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: var(--r-xs);
+  font-size: 11px;
+}
+
+.git-history-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--graphite);
+  font-family: ui-monospace, monospace;
+}
+
 .git-delta-add {
   color: #4ade80;
 }

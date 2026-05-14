@@ -364,39 +364,54 @@ export async function getGitHistory(
     '--all',
   ])
 
-  const normalizedQuery = query.trim().toLowerCase()
-  const commits: GitHistoryCommit[] = logOutput
-    .split('\n')
-    .filter((line) => line.trim())
-    .map((line) => {
-      // Extract graph prefix (everything before first |)
-      const graphMatch = line.match(/^([^|]*)/)
-      const graph = graphMatch?.[1] ?? ''
-      const rest = line.slice(graph.length + 1)
+  // Fetch stats separately for each commit to show file changes
+  const commits: GitHistoryCommit[] = []
+  const lines = logOutput.split('\n').filter((line) => line.trim())
 
-      // Parse the rest: hash|author|email|date|message|refs
-      const [hash, author, email, dateStr, message, refs] = rest.split('|')
+  for (const line of lines) {
+    // Extract graph prefix (everything before first |)
+    const graphMatch = line.match(/^([^|]*)/)
+    const graph = graphMatch?.[1] ?? ''
+    const rest = line.slice(graph.length + 1)
 
-      return {
-        hash: hash?.trim() ?? '',
-        shortHash: (hash?.trim() ?? '').slice(0, 7),
-        authorName: author?.trim() ?? '',
-        authorEmail: email?.trim() ?? '',
-        date: dateStr?.trim() ?? '',
-        message: message?.trim() ?? '',
-        refs: refs?.trim() ?? '',
-        graph: graph.trimEnd(), // Keep trailing spaces for alignment
+    // Parse the rest: hash|author|email|date|message|refs
+    const [hash, author, email, dateStr, message, refs] = rest.split('|')
+
+    // Fetch stats for this commit
+    let stats = ''
+    if (hash?.trim()) {
+      try {
+        const statsOutput = await git.raw(['show', '--stat', '--pretty=', (hash as string).trim()])
+        stats = statsOutput.trim()
+      } catch {
+        stats = ''
       }
-    })
-    .filter((entry) => {
-      if (!normalizedQuery) return true
-      return [entry.hash, entry.message, entry.authorName, entry.authorEmail, entry.refs]
-        .join(' ')
-        .toLowerCase()
-        .includes(normalizedQuery)
-    })
+    }
 
-  return { commits }
+    commits.push({
+      hash: hash?.trim() ?? '',
+      shortHash: (hash?.trim() ?? '').slice(0, 7),
+      authorName: author?.trim() ?? '',
+      authorEmail: email?.trim() ?? '',
+      date: dateStr?.trim() ?? '',
+      message: message?.trim() ?? '',
+      refs: refs?.trim() ?? '',
+      graph: graph.trimEnd(), // Keep trailing spaces for alignment
+      stats,
+    })
+  }
+
+  // Apply query filter
+  const normalizedQuery = query.trim().toLowerCase()
+  const filtered = commits.filter((entry) => {
+    if (!normalizedQuery) return true
+    return [entry.hash, entry.message, entry.authorName, entry.authorEmail, entry.refs]
+      .join(' ')
+      .toLowerCase()
+      .includes(normalizedQuery)
+  })
+
+  return { commits: filtered }
 }
 
 export async function getGitRefs(cwd: string): Promise<GitRefsResult> {

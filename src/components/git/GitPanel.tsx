@@ -713,6 +713,26 @@ type GitHistoryDetailsPaneProps = {
   commit: GitHistoryCommit
 }
 
+function parseFileStats(statsStr: string): { files: string[]; added: number; removed: number } {
+  const lines = statsStr.split('\n').filter((line) => line.trim())
+  const files: string[] = []
+  let added = 0
+  let removed = 0
+
+  for (const line of lines) {
+    // Each line format: " filename | +N -M"
+    const match = line.match(/^\s*(.+?)\s*\|\s*(\d+)?\+?(\s+)?(\d+)?-?/)
+    if (match?.[1]) {
+      const file = match[1].trim()
+      files.push(file)
+      if (match[2]) added += parseInt(match[2], 10)
+      if (match[4]) removed += parseInt(match[4], 10)
+    }
+  }
+
+  return { files, added, removed }
+}
+
 function GitHistoryDetailsPane(props: GitHistoryDetailsPaneProps) {
   const formattedDate = createMemo(() => {
     const timestamp = Date.parse(props.commit.date)
@@ -726,6 +746,8 @@ function GitHistoryDetailsPane(props: GitHistoryDetailsPaneProps) {
       minute: '2-digit',
     })
   })
+
+  const statsData = createMemo(() => parseFileStats(props.commit.stats))
 
   return (
     <div class="git-history-details-pane">
@@ -755,6 +777,26 @@ function GitHistoryDetailsPane(props: GitHistoryDetailsPaneProps) {
         <span class="label">Message</span>
         <pre>{props.commit.message}</pre>
       </div>
+      <Show when={statsData().files.length > 0}>
+        <div class="git-history-details-files">
+          <div class="git-history-files-header">
+            <span class="label">{statsData().files.length} Changed Files</span>
+            <span class="git-history-file-stats">
+              <span class="git-delta-add">+{statsData().added}</span>
+              <span class="git-delta-rem">-{statsData().removed}</span>
+            </span>
+          </div>
+          <div class="git-history-files-list">
+            <For each={statsData().files}>
+              {(file) => (
+                <div class="git-history-file-item">
+                  <span class="git-history-file-name">{file}</span>
+                </div>
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
     </div>
   )
 }
