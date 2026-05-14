@@ -11,17 +11,21 @@ import type {
   GitBranchRef,
   GitChangedFile,
   GitFileDiff,
+  GitHistoryCommit,
+  GitHistoryResult,
   GitRefsResult,
   GitStatusResult,
   GitSyncAction,
 } from '../../lib/ipc'
 import { FileTree } from './FileTree'
 
+type GitPanelTab = 'changes' | 'files' | 'history'
+
 interface GitPanelProps {
   style?: string | Record<string, string>
   cwd: string | null
-  activeTab?: 'changes' | 'files'
-  onActiveTabChange?: (tab: 'changes' | 'files') => void
+  activeTab?: GitPanelTab
+  onActiveTabChange?: (tab: GitPanelTab) => void
   onRequestFileSearch?: () => void
   onDiffOpen: (diff: GitFileDiff, files: GitChangedFile[], index: number) => void
   onFileClick?: (relPath: string) => void
@@ -59,12 +63,16 @@ export function GitPanel(props: GitPanelProps) {
   const [refsTab, setRefsTab] = createSignal<'branches' | 'stash'>('branches')
   const [refsQuery, setRefsQuery] = createSignal('')
   const [loadingDiff, setLoadingDiff] = createSignal<string | null>(null)
-  const [localActiveTab, setLocalActiveTab] = createSignal<'changes' | 'files'>('changes')
+  const [history, setHistory] = createSignal<GitHistoryResult | null>(null)
+  const [historyQuery, setHistoryQuery] = createSignal('')
+  const [historyLoading, setHistoryLoading] = createSignal(false)
+  const [historyError, setHistoryError] = createSignal<string | null>(null)
+  const [localActiveTab, setLocalActiveTab] = createSignal<GitPanelTab>('changes')
   const [collapseAllCount, setCollapseAllCount] = createSignal(0)
   let mounted = true
 
   const activeTab = () => props.activeTab ?? localActiveTab()
-  const setActiveTab = (tab: 'changes' | 'files') => {
+  const setActiveTab = (tab: GitPanelTab) => {
     props.onActiveTabChange?.(tab)
     setLocalActiveTab(tab)
   }
@@ -91,6 +99,23 @@ export function GitPanel(props: GitPanelProps) {
       mounted = false
       unsub()
     }
+  })
+
+  const loadHistory = async (query = historyQuery()) => {
+    setHistoryLoading(true)
+    setHistoryError(null)
+    try {
+      const result = await window.openpi.git.getHistory(query, 100)
+      if (mounted && result) setHistory(result)
+    } catch (err) {
+      if (mounted) setHistoryError(String(err))
+    } finally {
+      if (mounted) setHistoryLoading(false)
+    }
+  }
+
+  createEffect(() => {
+    if (activeTab() === 'history' && props.cwd) void loadHistory()
   })
 
   const handleFileClick = async (file: GitChangedFile) => {
@@ -287,6 +312,13 @@ export function GitPanel(props: GitPanelProps) {
               onClick={() => setActiveTab('files')}
             >
               Files
+            </button>
+            <button
+              type="button"
+              class={`git-panel-tab ${activeTab() === 'history' ? 'is-active' : ''}`}
+              onClick={() => setActiveTab('history')}
+            >
+              History
             </button>
           </div>
 
@@ -589,7 +621,70 @@ export function GitPanel(props: GitPanelProps) {
           />
         </div>
       </Show>
+
+      <Show when={activeTab() === 'history'}>
+        <div class="git-panel-body">
+          <div class="git-history-search-row">
+            <input
+              class="git-refs-search"
+              value={historyQuery()}
+              onInput={(event) => setHistoryQuery(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void loadHistory(event.currentTarget.value)
+              }}
+              placeholder="Search commits…"
+            />
+            <button type="button" class="git-stage-all-btn" onClick={() => void loadHistory()}>
+              Search
+            </button>
+          </div>
+          <Show when={historyLoading()}>
+            <div class="git-panel-empty">Loading history…</div>
+          </Show>
+          <Show when={historyError()}>
+            <div class="git-commit-error">{historyError()}</div>
+          </Show>
+          <Show when={!historyLoading()}>
+            <div class="git-history-list">
+              <Show when={(history()?.commits.length ?? 0) === 0}>
+                <div class="git-panel-empty">No commits found</div>
+              </Show>
+              <For each={history()?.commits ?? []}>
+                {(commit) => <GitHistoryRow commit={commit} />}
+              </For>
+            </div>
+          </Show>
+        </div>
+      </Show>
     </aside>
+  )
+}
+
+type GitHistoryRowProps = {
+  commit: GitHistoryCommit
+}
+
+function GitHistoryRow(props: GitHistoryRowProps) {
+  const formattedDate = createMemo(() => {
+    const timestamp = Date.parse(props.commit.date)
+    if (!Number.isFinite(timestamp)) return props.commit.date
+    return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  })
+
+  return (
+    <div class="git-history-row">
+      <div class="git-history-message">
+        <span>{props.commit.message}</span>
+        <Show when={props.commit.refs}>
+          <span class="git-history-refs">{props.commit.refs}</span>
+        </Show>
+      </div>
+      <div class="git-history-meta">
+        <span>{props.commit.authorName}</span>
+        <span>{formattedDate()}</span>
+        <span>{props.commit.shortHash}</span>
+      </div>
+    </div>
   )
 }
 

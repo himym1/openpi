@@ -22,6 +22,7 @@ import type {
   GitBranchInfo,
   GitCheckoutBranchResult,
   GitFileDiff,
+  GitHistoryResult,
   GitRefsResult,
   GitStatusResult,
   GitSyncResult,
@@ -59,6 +60,8 @@ import {
   gitCommitSchema,
   gitDiffRequestSchema,
   gitDiscardSchema,
+  gitHistoryRequestSchema,
+  gitHistoryResultSchema,
   gitRefsResultSchema,
   gitStageSchema,
   gitSyncResultSchema,
@@ -1109,6 +1112,16 @@ function registerHandlers(): void {
     const git = await getGitHost()
     return gitRefsResultSchema.parse(await git.getGitRefs(state.cwd))
   })
+
+  ipcMain.handle(
+    IPC.GIT_HISTORY,
+    async (_event, raw: unknown): Promise<GitHistoryResult | null> => {
+      if (!state?.cwd) return null
+      const { query, limit } = gitHistoryRequestSchema.parse(raw)
+      const git = await getGitHost()
+      return gitHistoryResultSchema.parse(await git.getGitHistory(state.cwd, query, limit))
+    }
+  )
 
   ipcMain.handle(
     IPC.GIT_CHECKOUT_BRANCH,

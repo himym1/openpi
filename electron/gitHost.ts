@@ -18,6 +18,8 @@ import type {
   GitChangedFile,
   GitCheckoutBranchResult,
   GitFileDiff,
+  GitHistoryCommit,
+  GitHistoryResult,
   GitOperation,
   GitRefsResult,
   GitStashEntry,
@@ -343,6 +345,35 @@ export async function commitFiles(
 /** Discard working-tree changes for a tracked file (git checkout -- <file>) */
 export async function discardFile(cwd: string, filePath: string): Promise<void> {
   await simpleGit({ baseDir: cwd }).checkout(['--', filePath])
+}
+
+export async function getGitHistory(
+  cwd: string,
+  query = '',
+  limit = 100
+): Promise<GitHistoryResult> {
+  const git = simpleGit({ baseDir: cwd })
+  const log = await git.log({ maxCount: Math.min(Math.max(limit, 1), 200) })
+  const normalizedQuery = query.trim().toLowerCase()
+  const commits: GitHistoryCommit[] = log.all
+    .map((entry) => ({
+      hash: entry.hash,
+      shortHash: entry.hash.slice(0, 7),
+      message: entry.message,
+      date: entry.date,
+      authorName: entry.author_name,
+      authorEmail: entry.author_email,
+      refs: entry.refs,
+    }))
+    .filter((entry) => {
+      if (!normalizedQuery) return true
+      return [entry.hash, entry.message, entry.authorName, entry.authorEmail, entry.refs]
+        .join(' ')
+        .toLowerCase()
+        .includes(normalizedQuery)
+    })
+
+  return { commits }
 }
 
 export async function getGitRefs(cwd: string): Promise<GitRefsResult> {

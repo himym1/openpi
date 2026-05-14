@@ -16,6 +16,7 @@ import type {
   GitBranchInfo,
   GitCheckoutBranchResult,
   GitFileDiff,
+  GitHistoryResult,
   GitRefsResult,
   GitStatusResult,
   GitSyncAction,
@@ -193,6 +194,8 @@ const api = {
     sync: (action: GitSyncAction): Promise<GitSyncResult | null> =>
       ipcRenderer.invoke(IPC.GIT_SYNC, { action }),
     getRefs: (): Promise<GitRefsResult | null> => ipcRenderer.invoke(IPC.GIT_REFS),
+    getHistory: (query = '', limit = 100): Promise<GitHistoryResult | null> =>
+      ipcRenderer.invoke(IPC.GIT_HISTORY, { query, limit }),
     checkoutBranch: (branch: string): Promise<GitCheckoutBranchResult | null> =>
       ipcRenderer.invoke(IPC.GIT_CHECKOUT_BRANCH, { branch }),
     onStatusChanged: (cb: (status: GitStatusResult) => void) => {

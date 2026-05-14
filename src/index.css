@@ -5260,6 +5260,72 @@ input::placeholder {
   text-align: center;
 }
 
+.git-history-search-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.git-history-search-row .git-refs-search {
+  flex: 1;
+  width: auto;
+  margin: 0;
+}
+
+.git-history-list {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 0;
+}
+
+.git-history-row {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.git-history-message {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  color: var(--graphite);
+  font-size: 12px;
+}
+
+.git-history-message > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-history-refs {
+  flex-shrink: 0;
+  max-width: 120px;
+  padding: 1px 4px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ash);
+  font-size: 10px;
+}
+
+.git-history-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 3px;
+  color: var(--ash);
+  font-size: 10px;
+}
+
+.git-history-meta span:last-child {
+  margin-left: auto;
+  font-family: ui-monospace, monospace;
+}
+
 .git-delta-add {
   color: #4ade80;
 }

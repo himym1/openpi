@@ -59,7 +59,7 @@ export default function App() {
   const [newTerminalRequest, setNewTerminalRequest] = createSignal(0)
   const [sidebarOpen, setSidebarOpen] = createSignal(true)
   const [secondaryPanelOpen, setSecondaryPanelOpen] = createSignal(false)
-  const [gitPanelTab, setGitPanelTab] = createSignal<'changes' | 'files'>('changes')
+  const [gitPanelTab, setGitPanelTab] = createSignal<'changes' | 'files' | 'history'>('changes')
   const [fileSearchOpen, setFileSearchOpen] = createSignal(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = createSignal(false)
   const [connectProviderOpen, setConnectProviderOpen] = createSignal(false)

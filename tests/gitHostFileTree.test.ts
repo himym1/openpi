@@ -6,12 +6,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   checkoutBranch,
   getFileTree,
+  getGitHistory,
   getGitRefs,
   getGitStatus,
   syncRemote,
 } from '../electron/gitHost'
 import {
   gitCheckoutBranchResultSchema,
+  gitHistoryResultSchema,
   gitRefsResultSchema,
   gitStatusResultSchema,
   gitSyncResultSchema,
@@ -230,5 +232,39 @@ describe('git refs and branch checkout', () => {
     expect(result.ok).toBe(false)
     expect(result.output).toContain('Commit, stash, or discard')
     expect((await getGitStatus(repo)).branch).toBe('main')
+  })
+})
+
+describe('getGitHistory', () => {
+  it('returns recent commits with author, refs, and short hashes', async () => {
+    const repo = makeWorkspace()
+    initRepo(repo)
+    writeFileSync(join(repo, 'README.md'), 'initial\n')
+    commitPaths(repo, 'initial commit', ['README.md'])
+    writeFileSync(join(repo, 'feature.txt'), 'feature\n')
+    commitPaths(repo, 'add feature workflow', ['feature.txt'])
+
+    const history = await getGitHistory(repo, '', 10)
+
+    expect(gitHistoryResultSchema.parse(history)).toEqual(history)
+    expect(history.commits[0]).toMatchObject({
+      message: 'add feature workflow',
+      authorName: 'OpenPi Test',
+      authorEmail: 'openpi@example.com',
+    })
+    expect(history.commits[0]?.shortHash).toHaveLength(7)
+  })
+
+  it('filters commits by query in the Git host', async () => {
+    const repo = makeWorkspace()
+    initRepo(repo)
+    writeFileSync(join(repo, 'README.md'), 'initial\n')
+    commitPaths(repo, 'initial commit', ['README.md'])
+    writeFileSync(join(repo, 'release.txt'), 'release\n')
+    commitPaths(repo, 'prepare release notes', ['release.txt'])
+
+    const history = await getGitHistory(repo, 'release', 10)
+
+    expect(history.commits.map((commit) => commit.message)).toEqual(['prepare release notes'])
   })
 })

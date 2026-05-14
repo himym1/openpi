@@ -62,6 +62,7 @@ export const IPC = {
   GIT_SYNC: 'openpi:git-sync',
   GIT_REFS: 'openpi:git-refs',
   GIT_CHECKOUT_BRANCH: 'openpi:git-checkout-branch',
+  GIT_HISTORY: 'openpi:git-history',
   GIT_FILE_TREE: 'openpi:git-file-tree',
   GIT_PANEL_MOUNTED: 'openpi:git-panel-mounted',
   READ_FILE: 'openpi:read-file',
@@ -683,6 +684,31 @@ export const gitCheckoutBranchResultSchema = z.object({
   output: z.string(),
 })
 export type GitCheckoutBranchResult = z.infer<typeof gitCheckoutBranchResultSchema>
+
+export const gitHistoryCommitSchema = z.object({
+  hash: z.string(),
+  shortHash: z.string(),
+  message: z.string(),
+  date: z.string(),
+  authorName: z.string(),
+  authorEmail: z.string(),
+  refs: z.string(),
+})
+export type GitHistoryCommit = z.infer<typeof gitHistoryCommitSchema>
+
+export const gitHistoryRequestSchema = z
+  .object({
+    query: z.string().optional().default(''),
+    limit: z.number().int().min(1).max(200).optional().default(100),
+  })
+  .optional()
+  .default({})
+export type GitHistoryRequest = z.infer<typeof gitHistoryRequestSchema>
+
+export const gitHistoryResultSchema = z.object({
+  commits: z.array(gitHistoryCommitSchema),
+})
+export type GitHistoryResult = z.infer<typeof gitHistoryResultSchema>
 
 // ─── File tree schema ──────────────────────────────────────────────────
 
