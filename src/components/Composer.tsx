@@ -676,7 +676,10 @@ export const Composer: Component<ComposerProps> = (props) => {
   })
 
   const applySlashCommand = (cmd: SlashCommand) => {
-    const newVal = `${cmd.name} `
+    // Pi SDK requires the leading `/` to recognise prompt templates and extension commands.
+    // Without it, session.prompt() receives e.g. `review` instead of `/review` and
+    // expandPromptTemplates check (`text.startsWith("/")`) skips expansion entirely.
+    const newVal = `/${cmd.name} `
     props.onInput(newVal)
     setSlashOpen(false)
     setFileMentionOpen(false)
