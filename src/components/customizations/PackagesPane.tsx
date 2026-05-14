@@ -1,8 +1,18 @@
-import { AlertTriangle, Check, Copy, ExternalLink, ShieldAlert } from 'lucide-solid'
+import {
+  AlertTriangle,
+  Check,
+  Copy,
+  Download,
+  ExternalLink,
+  Loader2,
+  ShieldAlert,
+  Trash2,
+} from 'lucide-solid'
 import { createMemo, createSignal, For, Show } from 'solid-js'
-import type { CustomizationItem, CustomizationScope } from '../../lib/ipc'
+import type { CustomizationItem, CustomizationScope, PackageOperationRequest } from '../../lib/ipc'
 
 type PkgSourceType = 'npm' | 'git' | 'local'
+type PackageScope = PackageOperationRequest['scope']
 
 interface ParsedPkg {
   sourceType: PkgSourceType
@@ -100,6 +110,25 @@ function parsePackage(name: string): ParsedPkg {
   }
 }
 
+function normalizeInstallSource(value: string): string {
+  const source = value.trim()
+  if (
+    source.startsWith('npm:') ||
+    source.startsWith('git:') ||
+    source.startsWith('https://') ||
+    source.startsWith('http://') ||
+    source.startsWith('ssh://') ||
+    source.startsWith('git://') ||
+    source.startsWith('git@') ||
+    source.startsWith('/') ||
+    source.startsWith('./') ||
+    source.startsWith('../')
+  ) {
+    return source
+  }
+  return `npm:${source}`
+}
+
 function shortenPath(p: string | null): string {
   if (!p) return ''
   return p.replace(/^\/Users\/[^/]+\//, '~/')
@@ -128,7 +157,11 @@ interface ParsedEntry {
   parsed: ParsedPkg
 }
 
-function PackageCard(props: { entry: ParsedEntry }) {
+function PackageCard(props: {
+  entry: ParsedEntry
+  removing: boolean
+  onRemove: (entry: ParsedEntry) => void
+}) {
   const [copied, setCopied] = createSignal(false)
 
   const copyInstall = () => {
@@ -186,6 +219,7 @@ function PackageCard(props: { entry: ParsedEntry }) {
               onClick={openExternal}
               title="Open source"
               aria-label="Open package source"
+              disabled={props.removing}
             >
               <ExternalLink size={13} />
             </button>
@@ -196,9 +230,22 @@ function PackageCard(props: { entry: ParsedEntry }) {
             onClick={copyInstall}
             title="Copy install command"
             aria-label="Copy install command"
+            disabled={props.removing}
           >
             <Show when={copied()} fallback={<Copy size={13} />}>
               <Check size={13} />
+            </Show>
+          </button>
+          <button
+            type="button"
+            class="pkg-action-btn pkg-action-danger"
+            onClick={() => props.onRemove(props.entry)}
+            title="Remove package"
+            aria-label={`Remove ${props.entry.item.name}`}
+            disabled={props.removing}
+          >
+            <Show when={props.removing} fallback={<Trash2 size={13} />}>
+              <Loader2 size={13} class="spin" />
             </Show>
           </button>
         </div>
@@ -207,7 +254,12 @@ function PackageCard(props: { entry: ParsedEntry }) {
   )
 }
 
-function SourceGroup(props: { type: PkgSourceType; entries: ParsedEntry[] }) {
+function SourceGroup(props: {
+  type: PkgSourceType
+  entries: ParsedEntry[]
+  removingId: string | null
+  onRemove: (entry: ParsedEntry) => void
+}) {
   return (
     <div class="pkg-group-box">
       <div class="pkg-group-header">
@@ -218,7 +270,15 @@ function SourceGroup(props: { type: PkgSourceType; entries: ParsedEntry[] }) {
       </div>
 
       <div class="pkg-group-rows">
-        <For each={props.entries}>{(entry) => <PackageCard entry={entry} />}</For>
+        <For each={props.entries}>
+          {(entry) => (
+            <PackageCard
+              entry={entry}
+              removing={props.removingId === entry.item.id}
+              onRemove={props.onRemove}
+            />
+          )}
+        </For>
       </div>
     </div>
   )
@@ -227,11 +287,18 @@ function SourceGroup(props: { type: PkgSourceType; entries: ParsedEntry[] }) {
 type PackagesPaneProps = {
   items: CustomizationItem[]
   loading: boolean
+  onReload: () => Promise<void>
+  onError: (message: string) => void
 }
 
 export function PackagesPane(props: PackagesPaneProps) {
   const [scopeFilter, setScopeFilter] = createSignal<ScopeFilter>('all')
   const [search, setSearch] = createSignal('')
+  const [installSource, setInstallSource] = createSignal('')
+  const [installScope, setInstallScope] = createSignal<PackageScope>('user')
+  const [installing, setInstalling] = createSignal(false)
+  const [removingId, setRemovingId] = createSignal<string | null>(null)
+  const [status, setStatus] = createSignal<string | null>(null)
 
   const allParsed = createMemo<ParsedEntry[]>(() =>
     props.items.map((item) => ({ item, parsed: parsePackage(item.name) }))
@@ -269,6 +336,60 @@ export function PackagesPane(props: PackagesPaneProps) {
     }))
   })
 
+  const submitInstall = async (event: SubmitEvent) => {
+    event.preventDefault()
+    const source = normalizeInstallSource(installSource())
+    if (!source) return
+
+    setInstalling(true)
+    setStatus(null)
+    try {
+      const result = await window.openpi.installPackage({ source, scope: installScope() })
+      if (!result.ok) {
+        props.onError(result.output)
+        setStatus(result.output)
+        return
+      }
+      setInstallSource('')
+      setStatus(result.output)
+      await props.onReload()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      props.onError(message)
+      setStatus(message)
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  const removePackage = async (entry: ParsedEntry) => {
+    if (entry.item.scope === 'temporary') return
+    const label = `${entry.item.name} from ${DISPLAY_SCOPE[entry.item.scope]}`
+    if (!window.confirm(`Remove ${label}?`)) return
+
+    setRemovingId(entry.item.id)
+    setStatus(null)
+    try {
+      const result = await window.openpi.removePackage({
+        source: entry.item.source,
+        scope: entry.item.scope,
+      })
+      if (!result.ok) {
+        props.onError(result.output)
+        setStatus(result.output)
+        return
+      }
+      setStatus(result.output)
+      await props.onReload()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      props.onError(message)
+      setStatus(message)
+    } finally {
+      setRemovingId(null)
+    }
+  }
+
   return (
     <div class="pkg-pane">
       <div class="pkg-security-bar">
@@ -278,6 +399,48 @@ export function PackagesPane(props: PackagesPaneProps) {
           source code before enabling any third-party package.
         </span>
       </div>
+
+      <form class="pkg-install-form" onSubmit={submitInstall}>
+        <div class="pkg-install-copy">
+          <span class="pkg-install-title">Install Pi package</span>
+          <span class="pkg-install-hint">
+            Accepts npm:, git:, URL, and local path sources. Bare names are installed as npm
+            packages.
+          </span>
+        </div>
+        <div class="pkg-install-controls">
+          <input
+            class="pkg-install-input"
+            placeholder="npm:pi-subagents"
+            value={installSource()}
+            onInput={(e) => setInstallSource(e.currentTarget.value)}
+            disabled={installing()}
+            aria-label="Package source"
+          />
+          <select
+            class="pkg-install-scope"
+            value={installScope()}
+            onChange={(e) => setInstallScope(e.currentTarget.value as PackageScope)}
+            disabled={installing()}
+            aria-label="Install scope"
+          >
+            <option value="user">Global</option>
+            <option value="project">Project</option>
+          </select>
+          <button
+            type="submit"
+            class="pkg-install-btn"
+            disabled={installing() || !installSource().trim()}
+          >
+            <Show when={installing()} fallback={<Download size={13} />}>
+              <Loader2 size={13} class="spin" />
+            </Show>
+            Install
+          </button>
+        </div>
+      </form>
+
+      <Show when={status()}>{(message) => <div class="pkg-status">{message()}</div>}</Show>
 
       <div class="pkg-toolbar">
         <div class="pkg-scope-tabs">
@@ -328,15 +491,20 @@ export function PackagesPane(props: PackagesPaneProps) {
                   fallback={<p>No packages match the current filter.</p>}
                 >
                   <p>No packages installed.</p>
-                  <p class="pkg-empty-hint">
-                    Run <code>pi install npm:package-name</code> in your terminal, then refresh.
-                  </p>
+                  <p class="pkg-empty-hint">Install from the field above or browse the gallery.</p>
                 </Show>
               </div>
             }
           >
             <For each={groups()}>
-              {(group) => <SourceGroup type={group.type} entries={group.entries} />}
+              {(group) => (
+                <SourceGroup
+                  type={group.type}
+                  entries={group.entries}
+                  removingId={removingId()}
+                  onRemove={removePackage}
+                />
+              )}
             </For>
           </Show>
         </Show>
@@ -344,10 +512,10 @@ export function PackagesPane(props: PackagesPaneProps) {
 
       <Show when={props.items.length > 0}>
         <div class="pkg-footer">
-          <span class="pkg-footer-label">Install:</span>
-          <code class="pkg-footer-cmd">pi install npm:@scope/pkg</code>
+          <span class="pkg-footer-label">Examples:</span>
+          <code class="pkg-footer-cmd">npm:@scope/pkg</code>
           <span class="pkg-footer-sep">·</span>
-          <code class="pkg-footer-cmd">pi install git:github.com/user/repo</code>
+          <code class="pkg-footer-cmd">git:github.com/user/repo</code>
         </div>
       </Show>
     </div>

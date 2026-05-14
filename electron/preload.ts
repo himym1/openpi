@@ -19,6 +19,8 @@ import type {
   ModelInfo,
   OpenSession,
   OutputLine,
+  PackageOperationRequest,
+  PackageOperationResult,
   PickWorkspaceResult,
   PiSettings,
   PiUpdateCheckResult,
@@ -105,6 +107,12 @@ const api = {
   // ── Customizations ────────────────────────────────────────────────────────
   getCustomizations: (): Promise<CustomizationsInventory> =>
     ipcRenderer.invoke(IPC.GET_CUSTOMIZATIONS),
+
+  installPackage: (payload: PackageOperationRequest): Promise<PackageOperationResult> =>
+    ipcRenderer.invoke(IPC.INSTALL_PACKAGE, payload),
+
+  removePackage: (payload: PackageOperationRequest): Promise<PackageOperationResult> =>
+    ipcRenderer.invoke(IPC.REMOVE_PACKAGE, payload),
 
   // ── Session name ─────────────────────────────────────────────────────
   setSessionName: (name: string): Promise<void> =>

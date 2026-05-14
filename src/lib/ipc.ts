@@ -28,6 +28,8 @@ export const IPC = {
   GET_GIT_BRANCH: 'openpi:get-git-branch',
   GET_WORKSPACE_SUMMARY: 'openpi:get-workspace-summary',
   GET_CUSTOMIZATIONS: 'openpi:get-customizations',
+  INSTALL_PACKAGE: 'openpi:install-package',
+  REMOVE_PACKAGE: 'openpi:remove-package',
   SET_SESSION_NAME: 'openpi:set-session-name',
   FORK_SESSION: 'openpi:fork-session',
 
@@ -300,6 +302,18 @@ export const customizationsInventorySchema = z.object({
   diagnostics: z.array(customizationDiagnosticSchema),
 })
 export type CustomizationsInventory = z.infer<typeof customizationsInventorySchema>
+
+export const packageOperationRequestSchema = z.object({
+  source: z.string().trim().min(1).max(2_000),
+  scope: z.enum(['user', 'project']),
+})
+export type PackageOperationRequest = z.infer<typeof packageOperationRequestSchema>
+
+export const packageOperationResultSchema = z.object({
+  ok: z.boolean(),
+  output: z.string(),
+})
+export type PackageOperationResult = z.infer<typeof packageOperationResultSchema>
 
 export const sessionHistoryToolCardSchema = z.object({
   toolCallId: z.string(),

@@ -9,10 +9,13 @@ import type {
   CustomizationDiagnostic,
   CustomizationItem,
   CustomizationsInventory,
+  PackageOperationResult,
 } from '../src/lib/ipc'
+import { packageOperationResultSchema } from '../src/lib/ipc'
 
 type SourceScope = 'user' | 'project' | 'temporary'
 type SourceOrigin = 'top-level' | 'package' | 'settings'
+type PackageOperationScope = Exclude<SourceScope, 'temporary'>
 
 type SourceLike = {
   path?: string
@@ -29,6 +32,76 @@ type DiagnosticLike = {
 }
 
 const EXTENSION_ENTRY_EXTENSIONS = new Set(['.ts'])
+
+export async function installCustomizationPackage(options: {
+  cwd: string | null
+  agentDir: string
+  source: string
+  scope: PackageOperationScope
+}): Promise<PackageOperationResult> {
+  return runPackageOperation({ ...options, action: 'install' })
+}
+
+export async function removeCustomizationPackage(options: {
+  cwd: string | null
+  agentDir: string
+  source: string
+  scope: PackageOperationScope
+}): Promise<PackageOperationResult> {
+  return runPackageOperation({ ...options, action: 'remove' })
+}
+
+async function runPackageOperation(options: {
+  cwd: string | null
+  agentDir: string
+  source: string
+  scope: PackageOperationScope
+  action: 'install' | 'remove'
+}): Promise<PackageOperationResult> {
+  const { cwd, agentDir, source, scope, action } = options
+  if (!cwd) {
+    return packageOperationResultSchema.parse({
+      ok: false,
+      output: 'Open a workspace before managing Pi packages.',
+    })
+  }
+
+  const settingsManager = SettingsManager.create(cwd, agentDir)
+  const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager })
+  const messages: string[] = []
+  packageManager.setProgressCallback((event) => {
+    if (event.message) messages.push(event.message)
+  })
+
+  try {
+    const local = scope === 'project'
+    if (action === 'install') {
+      await packageManager.installAndPersist(source, { local })
+    } else {
+      const removed = await packageManager.removeAndPersist(source, { local })
+      if (!removed) {
+        return packageOperationResultSchema.parse({
+          ok: false,
+          output: `No matching ${scope === 'project' ? 'project' : 'global'} package found for ${source}.`,
+        })
+      }
+    }
+    await settingsManager.flush()
+
+    return packageOperationResultSchema.parse({
+      ok: true,
+      output: [...messages, `${action === 'install' ? 'Installed' : 'Removed'} ${source}.`].join(
+        '\n'
+      ),
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return packageOperationResultSchema.parse({
+      ok: false,
+      output: [...messages, message].filter(Boolean).join('\n'),
+    })
+  }
+}
 
 export async function discoverCustomizations(options: {
   cwd: string | null

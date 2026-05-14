@@ -24,6 +24,7 @@ import type {
   GitStatusResult,
   ModelInfo,
   OutputLine,
+  PackageOperationResult,
   PiSettings,
   PiUpdateCheckResult,
   PiUpdateInstallResult,
@@ -60,6 +61,8 @@ import {
   logoutProviderSchema,
   newSessionSchema,
   openSessionSchema,
+  packageOperationRequestSchema,
+  packageOperationResultSchema,
   piUpdateCheckResultSchema,
   piUpdateInstallResultSchema,
   playSoundEffectSchema,
@@ -292,7 +295,8 @@ async function getPtyHost(): Promise<PtyHostInstance> {
 
 function getBundledPiVersion(): string {
   try {
-    const packageJsonPath = require.resolve('@earendil-works/pi-coding-agent/package.json')
+    const entryPath = require.resolve('@earendil-works/pi-coding-agent')
+    const packageJsonPath = path.resolve(path.dirname(entryPath), '..', 'package.json')
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')) as {
       version?: unknown
     }
@@ -365,13 +369,15 @@ async function installPiUpdate(): Promise<PiUpdateInstallResult> {
     })
     return piUpdateInstallResultSchema.parse({ ok: true, output: `${stdout}${stderr}`.trim() })
   } catch (err) {
-    const error = err as { stdout?: unknown; stderr?: unknown; message?: unknown }
+    const error = err as { code?: unknown; stdout?: unknown; stderr?: unknown; message?: unknown }
     const output = [error.stdout, error.stderr, error.message]
       .filter((part): part is string => typeof part === 'string' && part.length > 0)
       .join('\n')
+    const missingCliMessage =
+      'Pi CLI executable was not found on PATH. OpenPi package install/remove uses the bundled Pi SDK, but self-update requires the standalone `pi` CLI. Install it or expose it on PATH, then run `pi update --self`.'
     return piUpdateInstallResultSchema.parse({
       ok: false,
-      output: output || 'pi update --self failed.',
+      output: error.code === 'ENOENT' ? missingCliMessage : output || 'pi update --self failed.',
     })
   }
 }
@@ -907,6 +913,38 @@ function registerHandlers(): void {
     })
     return customizationsInventorySchema.parse(inventory)
   })
+
+  ipcMain.handle(
+    IPC.INSTALL_PACKAGE,
+    async (_event, raw: unknown): Promise<PackageOperationResult> => {
+      const { source, scope } = packageOperationRequestSchema.parse(raw)
+      const { installCustomizationPackage } = await getCustomizationsHost()
+      return packageOperationResultSchema.parse(
+        await installCustomizationPackage({
+          cwd: state?.cwd ?? deferredWorkspace,
+          agentDir: getAgentDir(),
+          source,
+          scope,
+        })
+      )
+    }
+  )
+
+  ipcMain.handle(
+    IPC.REMOVE_PACKAGE,
+    async (_event, raw: unknown): Promise<PackageOperationResult> => {
+      const { source, scope } = packageOperationRequestSchema.parse(raw)
+      const { removeCustomizationPackage } = await getCustomizationsHost()
+      return packageOperationResultSchema.parse(
+        await removeCustomizationPackage({
+          cwd: state?.cwd ?? deferredWorkspace,
+          agentDir: getAgentDir(),
+          source,
+          scope,
+        })
+      )
+    }
+  )
 
   ipcMain.handle(IPC.SET_SESSION_NAME, (_event, raw: unknown) => {
     if (!state) return

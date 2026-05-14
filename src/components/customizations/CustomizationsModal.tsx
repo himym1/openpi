@@ -243,7 +243,12 @@ export function CustomizationsModal(props: CustomizationsModalProps) {
                   <KeybindingsPane />
                 </Show>
                 <Show when={activeType() === 'packages'}>
-                  <PackagesPane items={activeItems()} loading={loading()} />
+                  <PackagesPane
+                    items={activeItems()}
+                    loading={loading()}
+                    onReload={loadInventory}
+                    onError={props.onError}
+                  />
                 </Show>
                 <Show when={activeType() === 'themes'}>
                   <ThemesPane items={activeItems()} loading={loading()} />
