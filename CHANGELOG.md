@@ -2,17 +2,19 @@
 
 ## [Unreleased]
 
-## [0.1.11] - 2026-05-14
+## [0.1.10] - 2026-05-14
+
+OpenPi v0.1.10 consolidates the CI hermetic fixes, packaged-app sidecar launch fix, Homebrew release automation, and Electron security upgrade.
+
+### Added
+
+- **Homebrew tap automation** — release publishing now updates `heyhuynhgiabuu/homebrew-openpi` automatically from the packaged arm64 DMG when `BREW_TAP_TOKEN` is configured (`1d7cab8`)
 
 ### Fixed
 
-- **Pi sidecar crash on launch** — `findNodeExecutable()` found the system `node` binary and called `child_process.fork()` with a path inside Electron's ASAR archive. Standalone `node` cannot read ASAR files, so the sidecar failed to `require('@earendil-works/pi-coding-agent')` and crashed immediately. After three retries the app showed "Pi sidecar crashed repeatedly." The fix: check `app.isPackaged` and always use `utilityProcess.fork()` in the packaged app — Electron's utility process has native ASAR support built in (`7ff4263`)
-
-
-## [0.1.10] - 2026-05-14
-
-## Fixed
-
+- **Packaged Pi sidecar launch crash** — packaged builds now force `utilityProcess.fork()` so the sidecar can load from Electron ASAR archives instead of crashing under standalone system `node` (`7ff4263`)
+- **Electron security audit** — upgraded Electron from 37.x to 42.0.1 to resolve all high-severity advisories reported by `npm audit`, including AppleScript injection (`GHSA-5rqw-r77c-jp79`) and service-worker IPC spoofing (`GHSA-xj5x-m3f3-5x3h`); `npm audit` now reports 0 vulnerabilities (`1a49f0b`)
+- **Deprecated rebuild dependency** — removed unused `electron-rebuild@3.2.9` and replaced it with `@electron/rebuild@4.0.4`, eliminating transitive CVEs from outdated `tar`, `cacache`, and `node-gyp` versions (`1a49f0b`)
 - **CI: bare remote default branch** — `git init --bare` on ubuntu-latest defaults to `master`; tests now pass `-b main` explicitly so the bare remote's HEAD matches the branch we push (`19d670a`)
 - **CI: hermetic git identity** — pin `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars in the git integration test file so runners with no global git identity don't fail commits (`6558204`)
 
