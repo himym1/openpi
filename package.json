@@ -21,7 +21,8 @@
     "release:patch": "node scripts/release.mjs patch",
     "release:minor": "node scripts/release.mjs minor",
     "release:major": "node scripts/release.mjs major",
-    "release:prerelease": "node scripts/release.mjs prerelease"
+    "release:prerelease": "node scripts/release.mjs prerelease",
+    "brew:update": "node scripts/update-brew.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.74.0",

@@ -87,6 +87,11 @@ jobs:
           path: dist-artifacts
           merge-multiple: true
 
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
       - name: Publish prerelease
         uses: softprops/action-gh-release@v2
         with:
@@ -95,3 +100,16 @@ jobs:
           draft: false
           prerelease: false
           files: dist-artifacts/**/*
+
+      - name: Update Homebrew tap
+        if: ${{ secrets.BREW_TAP_TOKEN != '' }}
+        env:
+          BREW_TAP_TOKEN: ${{ secrets.BREW_TAP_TOKEN }}
+        run: |
+          DMG=$(find dist-artifacts -name "*-arm64.dmg" | head -1)
+          if [ -z "$DMG" ]; then
+            echo "No arm64 DMG found in dist-artifacts — skipping Homebrew tap update"
+            exit 0
+          fi
+          echo "Updating Homebrew tap with $DMG"
+          node scripts/update-brew.mjs "${{ github.ref_name }}" "$DMG"
