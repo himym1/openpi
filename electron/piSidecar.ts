@@ -1,5 +1,5 @@
 /**
- * piSidecar.ts — Pi SDK agent runtime running in Electron utilityProcess.
+ * piSidecar.ts — Pi SDK agent runtime running in a sidecar child process.
  *
  * Isolates all Pi SDK memory from the main process. Main stays ≤100 MB;
  * Pi SDK (sessions, models, resource loading) lives here and can grow freely.
@@ -108,11 +108,27 @@ type ParentPort = {
   on(event: 'message', listener: (message: unknown) => void): void
 }
 
-const parentPort = (process as unknown as { parentPort: ParentPort }).parentPort
-if (!parentPort) {
-  process.stderr.write('[piSidecar] No parentPort — must run as utilityProcess\n')
+function createParentPort(): ParentPort | null {
+  const electronParentPort = (process as unknown as { parentPort?: ParentPort }).parentPort
+  if (electronParentPort) return electronParentPort
+
+  if (typeof process.send !== 'function') return null
+  return {
+    postMessage(msg: unknown): void {
+      process.send?.(msg)
+    },
+    on(_event: 'message', listener: (message: unknown) => void): void {
+      process.on('message', listener)
+    },
+  }
+}
+
+const maybeParentPort = createParentPort()
+if (!maybeParentPort) {
+  process.stderr.write('[piSidecar] No parent port — must run as utilityProcess or Node fork\n')
   process.exit(1)
 }
+const parentPort: ParentPort = maybeParentPort
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

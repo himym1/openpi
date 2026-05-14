@@ -1,10 +1,11 @@
 /**
- * piSidecarHost.ts — Thin bridge between Electron main and the Pi SDK utilityProcess sidecar.
+ * piSidecarHost.ts — Thin bridge between Electron main and the Pi SDK sidecar.
  *
  * Main process stays Pi-SDK-free. All Pi SDK memory lives in the sidecar child process.
  * Main receives typed SidecarMessage events and routes them to renderer or handles locally.
  */
 
+import { type ChildProcess, fork, spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type UtilityProcess, utilityProcess } from 'electron'
@@ -17,14 +18,48 @@ const SIDECAR_SERVICE_NAME = 'openpi-pi-sidecar'
 const RESTART_DELAY_MS = 1500
 const MAX_RESTARTS = 3
 
+type SidecarProcess = UtilityProcess | ChildProcess
+
 type PendingRequest = {
   resolve: (msg: SidecarMessage) => void
   reject: (err: Error) => void
   timeout: NodeJS.Timeout
 }
 
+function isUtilityProcess(child: SidecarProcess): child is UtilityProcess {
+  return 'postMessage' in child
+}
+
+function findNodeExecutable(): string | null {
+  // Prefer regular Node for Pi SDK execution so user extensions with native
+  // dependencies (for example better-sqlite3 in DCP) use the ABI they were
+  // installed/rebuilt for. Fall back to Electron utilityProcess only when no
+  // standalone Node executable is available.
+  const candidates = [process.env.OPENPI_NODE_EXECUTABLE, 'node'].filter(
+    (candidate): candidate is string => Boolean(candidate)
+  )
+
+  for (const candidate of candidates) {
+    const result = spawnSync(candidate, ['-e', 'process.exit(process.versions.electron ? 1 : 0)'], {
+      encoding: 'utf-8',
+      timeout: 3000,
+    })
+    if (result.status === 0) return candidate
+  }
+
+  return null
+}
+
+function sendToSidecar(child: SidecarProcess, command: SidecarCommand): void {
+  if (isUtilityProcess(child)) {
+    child.postMessage(command)
+    return
+  }
+  child.send(command)
+}
+
 export class PiSidecarHost {
-  private child: UtilityProcess | null = null
+  private child: SidecarProcess | null = null
   private readonly onMessage: (msg: SidecarMessage) => void
   private readonly onCrash: () => void
   private readonly pendingRequests = new Map<string, PendingRequest>()
@@ -46,10 +81,16 @@ export class PiSidecarHost {
   }
 
   private spawnChild(): void {
-    const child = utilityProcess.fork(SIDECAR_PATH, [], {
-      serviceName: SIDECAR_SERVICE_NAME,
-      stdio: 'pipe',
-    })
+    const nodeExecutable = findNodeExecutable()
+    const child: SidecarProcess = nodeExecutable
+      ? fork(SIDECAR_PATH, [], {
+          execPath: nodeExecutable,
+          stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+        })
+      : utilityProcess.fork(SIDECAR_PATH, [], {
+          serviceName: SIDECAR_SERVICE_NAME,
+          stdio: 'pipe',
+        })
 
     child.stdout?.on('data', (chunk: Buffer) => {
       process.stdout.write(`[piSidecar] ${chunk.toString('utf8').trimEnd()}\n`)
@@ -77,30 +118,33 @@ export class PiSidecarHost {
       this.onMessage(message)
     })
 
-    child.on('exit', (code) => {
-      this.child = null
-      for (const pending of this.pendingRequests.values()) {
-        clearTimeout(pending.timeout)
-        pending.reject(new Error(`Pi sidecar exited with code ${code}`))
+    ;(child as unknown as { on(event: 'exit', listener: (code: number | null) => void): void }).on(
+      'exit',
+      (code) => {
+        this.child = null
+        for (const pending of this.pendingRequests.values()) {
+          clearTimeout(pending.timeout)
+          pending.reject(new Error(`Pi sidecar exited with code ${code}`))
+        }
+        this.pendingRequests.clear()
+        if (this.stopping) return
+        process.stderr.write(`[piSidecarHost] sidecar exited with code ${code}\n`)
+        if (this.restartCount < MAX_RESTARTS) {
+          this.restartCount++
+          setTimeout(() => {
+            if (!this.stopping) this.spawnChild()
+          }, RESTART_DELAY_MS)
+        } else {
+          this.onCrash()
+        }
       }
-      this.pendingRequests.clear()
-      if (this.stopping) return
-      process.stderr.write(`[piSidecarHost] sidecar exited with code ${code}\n`)
-      if (this.restartCount < MAX_RESTARTS) {
-        this.restartCount++
-        setTimeout(() => {
-          if (!this.stopping) this.spawnChild()
-        }, RESTART_DELAY_MS)
-      } else {
-        this.onCrash()
-      }
-    })
+    )
 
     this.child = child
   }
 
   send(command: SidecarCommand): void {
-    this.child?.postMessage(command)
+    if (this.child) sendToSidecar(this.child, command)
   }
 
   request<T extends SidecarMessage>(
@@ -120,7 +164,7 @@ export class PiSidecarHost {
         reject,
         timeout,
       })
-      this.child!.postMessage(command)
+      sendToSidecar(this.child!, command)
     })
   }
 
@@ -142,7 +186,7 @@ export class PiSidecarHost {
       }
 
       this.child!.on('message', cleanup)
-      this.child!.postMessage({ type: 'stop' } satisfies SidecarCommand)
+      sendToSidecar(this.child!, { type: 'stop' } satisfies SidecarCommand)
     })
   }
 }
