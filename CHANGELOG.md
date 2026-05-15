@@ -17,6 +17,9 @@ OpenPi v0.1.12 fixes fork-from-message crashes, the GitHub Copilot device-code l
 
 ### Added
 
+- **Task widget** — when a Pi session uses `pi-tasks`, a collapsible widget above the composer tracks live task state (pending → in-progress → completed) with subject, active form, and ✓/●/○ icons; clears automatically on new session.
+- **Ask User Question modal** — when `pi-askuserquestion` poses structured questions, a floating modal above the composer renders radio/checkbox option rows, a free-text row, and N-of-M progress dots. Answers are forwarded via `steer()` while the agent is running or `followUp()` when idle, so responses reach Pi even when the extension self-disables in headless mode.
+- **Subagent status widget** — when `pi-subagents` spawns background or foreground agents, a collapsible widget shows each agent's type, description, elapsed time, and status (running/queued/completed/failed) with a pulsing indicator for active agents.
 - **Extension Active/Inactive status chips** — each extension card in the Customizations panel now shows an Active or Inactive chip. User-scope global extensions (`~/.pi/agent/extensions/`) are always Active; project-local extensions show Inactive with an inline trust banner when the workspace is not yet trusted.
 
 ### Changed
