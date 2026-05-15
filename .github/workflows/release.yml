@@ -85,9 +85,8 @@ jobs:
             else
               echo "OK:   $artifact (${size} bytes)"
             fi
-          done < <(find "$RELEASE_DIR" \
+          done < <(find "$RELEASE_DIR" -maxdepth 1 \
             \( -name "*.dmg" -o -name "*.AppImage" -o -name "*.exe" \) \
-            -not -name "*helper*" \
             -print0 2>/dev/null || true)
 
           if [ "$fail" -ne 0 ]; then
@@ -114,9 +113,9 @@ jobs:
           echo "# Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$CHECKSUMS_FILE"
           echo "" >> "$CHECKSUMS_FILE"
 
-          find "$RELEASE_DIR" \
+          find "$RELEASE_DIR" -maxdepth 1 \
             \( -name "*.dmg" -o -name "*.AppImage" -o -name "*.exe" \) \
-            -not -name "*helper*" | sort | while IFS= read -r f; do
+            | sort | while IFS= read -r f; do
             if command -v sha256sum &>/dev/null; then
               sha256sum "$f" | sed "s|$RELEASE_DIR/||" >> "$CHECKSUMS_FILE"
             elif command -v shasum &>/dev/null; then
