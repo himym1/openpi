@@ -129,6 +129,7 @@ export type AppInfo = z.infer<typeof appInfoSchema>
 
 export const sessionPromptSchema = z.object({
   text: z.string().min(1).max(100_000),
+  contextPrefix: z.string().min(1).max(100_000).optional(),
 })
 export type SessionPrompt = z.infer<typeof sessionPromptSchema>
 

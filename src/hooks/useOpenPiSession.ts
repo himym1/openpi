@@ -25,6 +25,7 @@ import type {
   WorkspaceSummaryInfo,
 } from '../lib/ipc'
 import { applySessionEvent } from '../lib/sessionEvents'
+import { buildSessionPromptPayload, buildSessionPromptText } from '../lib/sessionPrompt'
 import { groupSessions } from '../lib/sessionView'
 import type { GroupMode, Message, SortMode } from '../types/session'
 
@@ -32,12 +33,7 @@ export type QueueMode = 'prompt' | 'steer' | 'followup'
 
 const HISTORY_PAGE_LIMIT = 200
 
-export function buildSessionPromptText(inputText: string, contextPrefix?: string): string {
-  const userText = inputText.trim()
-  const prefix = contextPrefix?.trim()
-  if (prefix && userText) return `${prefix}\n\n${userText}`
-  return prefix || userText
-}
+export { buildSessionPromptText }
 
 export function useOpenPiSession() {
   // ── Core session state ────────────────────────────────────────────────────
@@ -340,15 +336,17 @@ export function useOpenPiSession() {
   }
 
   const send = async (contextPrefix?: string) => {
-    const text = buildSessionPromptText(input(), contextPrefix)
+    const promptPayload = buildSessionPromptPayload(input(), contextPrefix)
     const r = ready()
-    if (!text || !r) return
+    if (!promptPayload.text || !r) return
     setInput('')
     if (textareaEl) textareaEl.style.height = 'auto'
     try {
-      if (queueMode() === 'steer') await window.openpi.steer(text)
-      else if (queueMode() === 'followup') await window.openpi.followUp(text)
-      else await window.openpi.prompt(text)
+      if (queueMode() === 'steer')
+        await window.openpi.steer(promptPayload.text, promptPayload.contextPrefix)
+      else if (queueMode() === 'followup')
+        await window.openpi.followUp(promptPayload.text, promptPayload.contextPrefix)
+      else await window.openpi.prompt(promptPayload.text, promptPayload.contextPrefix)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }

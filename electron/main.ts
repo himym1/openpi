@@ -81,6 +81,7 @@ import {
   piUpdateCheckResultSchema,
   piUpdateInstallResultSchema,
   playSoundEffectSchema,
+  promptTemplateSchema,
   ptyCloseSchema,
   ptyCreateSchema,
   ptyResizeSchema,
@@ -101,6 +102,7 @@ import {
   setProviderKeySchema,
   setSessionNameSchema,
   setThinkingSchema,
+  skillItemSchema,
   unarchiveSessionsRequestSchema,
   workspaceSummaryInfoSchema,
   workspaceSummaryRequestSchema,
@@ -929,22 +931,22 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.SESSION_PROMPT, async (_event, raw: unknown) => {
     const active = await ensureActiveSession()
     if (!active) return
-    const { text } = sessionPromptSchema.parse(raw)
-    requirePiSidecar().send({ type: 'prompt', text })
+    const { text, contextPrefix } = sessionPromptSchema.parse(raw)
+    requirePiSidecar().send({ type: 'prompt', text, contextPrefix })
   })
 
   ipcMain.handle(IPC.SESSION_STEER, async (_event, raw: unknown) => {
     const active = await ensureActiveSession()
     if (!active) return
-    const { text } = sessionPromptSchema.parse(raw)
-    requirePiSidecar().send({ type: 'steer', text })
+    const { text, contextPrefix } = sessionPromptSchema.parse(raw)
+    requirePiSidecar().send({ type: 'steer', text, contextPrefix })
   })
 
   ipcMain.handle(IPC.SESSION_FOLLOW_UP, async (_event, raw: unknown) => {
     const active = await ensureActiveSession()
     if (!active) return
-    const { text } = sessionPromptSchema.parse(raw)
-    requirePiSidecar().send({ type: 'follow_up', text })
+    const { text, contextPrefix } = sessionPromptSchema.parse(raw)
+    requirePiSidecar().send({ type: 'follow_up', text, contextPrefix })
   })
 
   ipcMain.handle(
@@ -1477,45 +1479,21 @@ function registerHandlers(): void {
   })
 
   // ── Prompt template listing (slash command completions) ────────────────────
-  ipcMain.handle(IPC.LIST_PROMPT_TEMPLATES, (): PromptTemplate[] => {
-    const agentDir = getAgentDir()
-    const dirsToScan = [
-      path.join(agentDir, 'prompts'),
-      ...(state?.cwd ? [path.join(state.cwd, '.pi', 'prompts')] : []),
-    ]
-    const results: PromptTemplate[] = []
-    const seen = new Set<string>()
-    for (const dir of dirsToScan) {
-      if (!fs.existsSync(dir)) continue
-      let files: string[]
-      try {
-        files = fs.readdirSync(dir).filter((f) => f.endsWith('.md'))
-      } catch {
-        continue
-      }
-      for (const file of files) {
-        const name = path.basename(file, '.md')
-        if (seen.has(name)) continue
-        seen.add(name)
-        let description = ''
-        let argHint: string | undefined
-        try {
-          const content = fs.readFileSync(path.join(dir, file), 'utf-8')
-          const fmMatch = /^---\n([\s\S]*?)\n---/.exec(content)
-          if (fmMatch) {
-            const fm = fmMatch[1]
-            const descMatch = /^description:\s*(.+)$/m.exec(fm)
-            if (descMatch) description = descMatch[1].trim()
-            const argMatch = /^argument-hint:\s*(.+)$/m.exec(fm)
-            if (argMatch) argHint = argMatch[1].trim().replace(/^"|"$/g, '')
-          }
-        } catch {
-          /* skip unreadable */
-        }
-        results.push({ name, description, argHint })
-      }
-    }
-    return results.sort((a, b) => a.name.localeCompare(b.name))
+  ipcMain.handle(IPC.LIST_PROMPT_TEMPLATES, async (): Promise<PromptTemplate[]> => {
+    const cwd = activeWorkspacePath() ?? undefined
+    const requestId = createRequestId()
+    const response = await requirePiSidecar().request<
+      Extract<SidecarMessage, { type: 'prompt_templates_result' }>
+    >({
+      type: 'list_prompt_templates',
+      requestId,
+      cwd,
+      workspaceTrusted: cwd ? (sessionIndex?.isWorkspaceTrusted(cwd) ?? false) : false,
+    })
+    return z
+      .array(promptTemplateSchema)
+      .parse(response.prompts)
+      .sort((a, b) => a.name.localeCompare(b.name))
   })
 
   // ── fff file search + content grep ───────────────────────────────────
@@ -1601,82 +1579,37 @@ function registerHandlers(): void {
     }
   )
 
-  ipcMain.handle(IPC.LIST_SKILLS, (): SkillItem[] => {
-    const agentDir = getAgentDir()
-    const dirsToScan: Array<{ dir: string; scope: 'user' | 'project' }> = [
-      { dir: path.join(agentDir, 'skills'), scope: 'user' },
-      ...(state?.cwd
-        ? [{ dir: path.join(state.cwd, '.pi', 'skills'), scope: 'project' as const }]
-        : []),
-    ]
-    const results: SkillItem[] = []
-    const seen = new Set<string>()
-
-    for (const { dir, scope } of dirsToScan) {
-      if (!fs.existsSync(dir)) continue
-      let entries: string[]
-      try {
-        entries = fs.readdirSync(dir)
-      } catch {
-        continue
-      }
-
-      for (const entry of entries) {
-        if (entry.startsWith('.') || entry === 'registry.json' || entry === 'references') continue
-        const skillDir = path.join(dir, entry)
-        const skillFile = path.join(skillDir, 'SKILL.md')
-        try {
-          if (!fs.statSync(skillDir).isDirectory()) continue
-        } catch {
-          continue
-        }
-        if (!fs.existsSync(skillFile)) continue
-        if (seen.has(entry)) continue // project skills shadow global with same name
-        seen.add(entry)
-
-        let description = ''
-        let tags: string[] = []
-        try {
-          const content = fs.readFileSync(skillFile, 'utf-8')
-          const fmMatch = /^---\n([\s\S]*?)\n---/.exec(content)
-          if (fmMatch) {
-            const fm = fmMatch[1]
-            const descMatch = /^description:\s*(.+)$/m.exec(fm)
-            if (descMatch) description = descMatch[1].trim().replace(/^['"]|['"]$/g, '')
-            const tagsMatch = /^tags:\s*\[(.+)\]/m.exec(fm)
-            if (tagsMatch)
-              tags = tagsMatch[1].split(',').map((t) => t.trim().replace(/['"|[\]]/g, ''))
-          }
-        } catch {
-          /* skip unreadable */
-        }
-
-        // Per Pi SDK: skills without description are silently skipped
-        if (!description) continue
-
-        results.push({ name: entry, description, path: skillDir, scope, tags })
-      }
-    }
-    return results.sort((a, b) => a.name.localeCompare(b.name))
+  ipcMain.handle(IPC.LIST_SKILLS, async (): Promise<SkillItem[]> => {
+    const cwd = activeWorkspacePath() ?? undefined
+    const requestId = createRequestId()
+    const response = await requirePiSidecar().request<
+      Extract<SidecarMessage, { type: 'skills_result' }>
+    >({
+      type: 'list_skills',
+      requestId,
+      cwd,
+      workspaceTrusted: cwd ? (sessionIndex?.isWorkspaceTrusted(cwd) ?? false) : false,
+    })
+    return z
+      .array(skillItemSchema)
+      .parse(response.skills)
+      .sort((a, b) => a.name.localeCompare(b.name))
   })
 
-  ipcMain.handle(IPC.READ_SKILL_FILE, (_event, raw: unknown): string | null => {
+  ipcMain.handle(IPC.READ_SKILL_FILE, async (_event, raw: unknown): Promise<string | null> => {
     const { path: filePath } = readSkillFileRequestSchema.parse(raw)
-    // Security: path must be within a known skills directory
-    const agentDir = getAgentDir()
-    const userSkillsDir = path.join(agentDir, 'skills')
-    const projectSkillsDir = state?.cwd ? path.join(state.cwd, '.pi', 'skills') : null
-    const resolved = path.resolve(filePath)
-    const sep = path.sep
-    const isValid =
-      resolved.startsWith(userSkillsDir + sep) ||
-      (projectSkillsDir != null && resolved.startsWith(projectSkillsDir + sep))
-    if (!isValid) return null
-    try {
-      return fs.readFileSync(resolved, 'utf-8')
-    } catch {
-      return null
-    }
+    const cwd = activeWorkspacePath() ?? undefined
+    const requestId = createRequestId()
+    const response = await requirePiSidecar().request<
+      Extract<SidecarMessage, { type: 'skill_file_result' }>
+    >({
+      type: 'read_skill_file',
+      requestId,
+      path: filePath,
+      cwd,
+      workspaceTrusted: cwd ? (sessionIndex?.isWorkspaceTrusted(cwd) ?? false) : false,
+    })
+    return response.content
   })
 
   ipcMain.handle(IPC.LIST_ARCHIVED_SESSIONS, (): ArchivedSessionItem[] => {

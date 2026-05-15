@@ -49,6 +49,12 @@ interface SlashCommand {
   argHint?: string
 }
 
+export function formatSlashCommandInput(commandName: string): string {
+  const trimmed = commandName.trim()
+  const slashName = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  return `${slashName} `
+}
+
 // Thinking levels supported by Pi — matches ThinkingLevel union in Pi SDK
 const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const
 
@@ -679,7 +685,7 @@ export const Composer: Component<ComposerProps> = (props) => {
     // Pi SDK requires the leading `/` to recognise prompt templates and extension commands.
     // Without it, session.prompt() receives e.g. `review` instead of `/review` and
     // expandPromptTemplates check (`text.startsWith("/")`) skips expansion entirely.
-    const newVal = `/${cmd.name} `
+    const newVal = formatSlashCommandInput(cmd.name)
     props.onInput(newVal)
     setSlashOpen(false)
     setFileMentionOpen(false)

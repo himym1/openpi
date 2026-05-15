@@ -20,6 +20,7 @@ import {
   SessionManager,
   SettingsManager,
 } from '@earendil-works/pi-coding-agent'
+import { buildPromptTextWithContext } from '../src/lib/sessionPrompt'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -32,9 +33,18 @@ export type SidecarCommand =
       requestId?: string
       workspaceTrusted?: boolean
     }
-  | { type: 'prompt'; text: string }
-  | { type: 'steer'; text: string }
-  | { type: 'follow_up'; text: string }
+  | { type: 'prompt'; text: string; contextPrefix?: string }
+  | { type: 'steer'; text: string; contextPrefix?: string }
+  | { type: 'follow_up'; text: string; contextPrefix?: string }
+  | { type: 'list_prompt_templates'; requestId: string; cwd?: string; workspaceTrusted?: boolean }
+  | { type: 'list_skills'; requestId: string; cwd?: string; workspaceTrusted?: boolean }
+  | {
+      type: 'read_skill_file'
+      requestId: string
+      path: string
+      cwd?: string
+      workspaceTrusted?: boolean
+    }
   | { type: 'abort' }
   | { type: 'set_model'; provider: string; modelId: string }
   | { type: 'set_thinking'; level: string }
@@ -65,6 +75,9 @@ export type SidecarMessage =
   | { type: 'bash_result'; requestId: string; result: unknown }
   | { type: 'settings_result'; requestId: string; result: unknown }
   | { type: 'providers_result'; requestId: string; providers: unknown[] }
+  | { type: 'prompt_templates_result'; requestId: string; prompts: unknown[] }
+  | { type: 'skills_result'; requestId: string; skills: unknown[] }
+  | { type: 'skill_file_result'; requestId: string; content: string | null }
   | { type: 'provider_login_event'; requestId: string; event: unknown }
   | { type: 'output_append'; line: { level: string; text: string; ts: number } }
   | { type: 'error'; requestId?: string; message: string }
@@ -161,6 +174,76 @@ function outputLine(level: 'info' | 'warn' | 'error', text: string): void {
   send({ type: 'output_append', line: { level, text, ts: Date.now() } })
 }
 
+function stripFrontmatter(content: string): string {
+  const trimmed = content.trimStart()
+  if (!trimmed.startsWith('---')) return trimmed
+  const afterOpen = trimmed.slice(3)
+  const closeIdx = afterOpen.indexOf('\n---')
+  if (closeIdx === -1) return trimmed
+  return afterOpen.slice(closeIdx + 4).trimStart()
+}
+
+function expandSkillCommandForContext(
+  text: string,
+  session: Awaited<ReturnType<typeof createAgentSession>>['session']
+): { text: string; expanded: boolean } {
+  if (!text.startsWith('/skill:')) return { text, expanded: false }
+  const spaceIndex = text.indexOf(' ')
+  const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex)
+  const args = spaceIndex === -1 ? '' : text.slice(spaceIndex + 1).trim()
+  const skill = session.resourceLoader
+    .getSkills()
+    .skills.find((candidate) => candidate.name === skillName)
+  if (!skill) return { text, expanded: false }
+  const body = stripFrontmatter(fs.readFileSync(skill.filePath, 'utf-8')).trim()
+  const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`
+  return { text: args ? `${skillBlock}\n\n${args}` : skillBlock, expanded: true }
+}
+
+function buildSidecarPromptText(
+  text: string,
+  contextPrefix: string | undefined,
+  session: Awaited<ReturnType<typeof createAgentSession>>['session']
+): string {
+  if (!contextPrefix) return text
+  const expandedSkill = expandSkillCommandForContext(text.trim(), session)
+  if (expandedSkill.expanded) return `${contextPrefix.trim()}\n\n${expandedSkill.text}`
+  return buildPromptTextWithContext(text, contextPrefix, session.promptTemplates).text
+}
+
+async function getResourceLoader(cwd: string, workspaceTrusted: boolean) {
+  const agentDir = getAgentDir()
+  if (
+    _cachedResourceLoader &&
+    _cachedResourceLoader.cwd === cwd &&
+    _cachedResourceLoader.workspaceTrusted === workspaceTrusted
+  ) {
+    return _cachedResourceLoader.loader
+  }
+
+  const fileSettingsManager = SettingsManager.create(cwd, agentDir)
+  const settingsManager = workspaceTrusted
+    ? fileSettingsManager
+    : SettingsManager.inMemory(fileSettingsManager.getGlobalSettings())
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    noExtensions: !workspaceTrusted,
+  })
+  try {
+    await loader.reload()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    outputLine(
+      'warn',
+      `[packages] One or more Pi packages failed to install and were skipped: ${msg}`
+    )
+  }
+  _cachedResourceLoader = { cwd, workspaceTrusted, loader }
+  return loader
+}
+
 // ─── Session management ────────────────────────────────────────────────────────
 
 async function startSession(
@@ -198,41 +281,7 @@ async function startSession(
     }
   }
 
-  // Cache resource loader per workspace — avoid re-reading all skills/themes on every session switch
-  if (
-    !_cachedResourceLoader ||
-    _cachedResourceLoader.cwd !== cwd ||
-    _cachedResourceLoader.workspaceTrusted !== workspaceTrusted
-  ) {
-    const loader = new DefaultResourceLoader({
-      cwd,
-      agentDir,
-      settingsManager,
-      noExtensions: !workspaceTrusted,
-      // Extensions are executable Node.js code. In untrusted workspaces OpenPi
-      // uses global settings only and disables extension loading until the user
-      // grants workspace trust from the desktop UI.
-    })
-    // loader.reload() installs packages listed in settings via `npm install -g`.
-    // A missing or private npm package (e.g. one still in development) causes npm
-    // to exit non-zero, which throws here and kills the entire session startup.
-    // Per the Pi SDK, packages supply optional resources (skills, prompts, themes,
-    // extensions); they must not block core session functionality. Catch, warn, continue.
-    try {
-      await loader.reload()
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      outputLine(
-        'warn',
-        `[packages] One or more Pi packages failed to install and were skipped: ${msg}`
-      )
-      outputLine(
-        'warn',
-        '[packages] Check ~/.pi/agent/settings.json — remove or fix broken "packages" entries, or set "npmCommand" to point to your npm binary.'
-      )
-    }
-    _cachedResourceLoader = { cwd, workspaceTrusted, loader }
-  }
+  const resourceLoader = await getResourceLoader(cwd, workspaceTrusted)
 
   const { session } = await createAgentSession({
     cwd,
@@ -241,7 +290,7 @@ async function startSession(
     authStorage,
     modelRegistry,
     settingsManager,
-    resourceLoader: _cachedResourceLoader.loader,
+    resourceLoader,
   })
 
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -337,19 +386,74 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
 
     case 'prompt': {
       if (!state) return
-      await state.session.prompt(cmd.text)
+      const promptText = buildSidecarPromptText(cmd.text, cmd.contextPrefix, state.session)
+      await state.session.prompt(promptText)
       break
     }
 
     case 'steer': {
       if (!state) return
-      await state.session.steer(cmd.text)
+      const steerText = buildSidecarPromptText(cmd.text, cmd.contextPrefix, state.session)
+      await state.session.steer(steerText)
       break
     }
 
     case 'follow_up': {
       if (!state) return
-      await state.session.followUp(cmd.text)
+      const followUpText = buildSidecarPromptText(cmd.text, cmd.contextPrefix, state.session)
+      await state.session.followUp(followUpText)
+      break
+    }
+
+    case 'list_prompt_templates': {
+      const cwd = cmd.cwd ?? state?.cwd ?? process.cwd()
+      const workspaceTrusted = cmd.workspaceTrusted ?? false
+      const loader = await getResourceLoader(cwd, workspaceTrusted)
+      const prompts = loader.getPrompts().prompts.map((prompt) => ({
+        name: prompt.name,
+        description: prompt.description,
+        argHint: prompt.argumentHint,
+      }))
+      send({ type: 'prompt_templates_result', requestId: cmd.requestId, prompts })
+      break
+    }
+
+    case 'list_skills': {
+      const cwd = cmd.cwd ?? state?.cwd ?? process.cwd()
+      const workspaceTrusted = cmd.workspaceTrusted ?? false
+      const loader = await getResourceLoader(cwd, workspaceTrusted)
+      const skills = loader.getSkills().skills.map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+        path: skill.baseDir,
+        scope: skill.sourceInfo.scope === 'project' ? 'project' : 'user',
+        tags: [],
+      }))
+      send({ type: 'skills_result', requestId: cmd.requestId, skills })
+      break
+    }
+
+    case 'read_skill_file': {
+      const cwd = cmd.cwd ?? state?.cwd ?? process.cwd()
+      const workspaceTrusted = cmd.workspaceTrusted ?? false
+      const loader = await getResourceLoader(cwd, workspaceTrusted)
+      const requested = path.resolve(cmd.path)
+      const skill = loader
+        .getSkills()
+        .skills.find((candidate) => path.resolve(candidate.filePath) === requested)
+      if (!skill) {
+        send({ type: 'skill_file_result', requestId: cmd.requestId, content: null })
+        break
+      }
+      try {
+        send({
+          type: 'skill_file_result',
+          requestId: cmd.requestId,
+          content: fs.readFileSync(skill.filePath, 'utf-8'),
+        })
+      } catch {
+        send({ type: 'skill_file_result', requestId: cmd.requestId, content: null })
+      }
       break
     }
 

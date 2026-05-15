@@ -68,11 +68,14 @@ const api = {
   pickWorkspace: (): Promise<PickWorkspaceResult> => ipcRenderer.invoke(IPC.PICK_WORKSPACE),
 
   // ── Session commands ─────────────────────────────────────────────────────
-  prompt: (text: string): Promise<void> => ipcRenderer.invoke(IPC.SESSION_PROMPT, { text }),
+  prompt: (text: string, contextPrefix?: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.SESSION_PROMPT, { text, contextPrefix }),
 
-  steer: (text: string): Promise<void> => ipcRenderer.invoke(IPC.SESSION_STEER, { text }),
+  steer: (text: string, contextPrefix?: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.SESSION_STEER, { text, contextPrefix }),
 
-  followUp: (text: string): Promise<void> => ipcRenderer.invoke(IPC.SESSION_FOLLOW_UP, { text }),
+  followUp: (text: string, contextPrefix?: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.SESSION_FOLLOW_UP, { text, contextPrefix }),
 
   bash: (command: string, excludeFromContext = false): Promise<BashExecutionResult> =>
     ipcRenderer.invoke(IPC.SESSION_BASH, { command, excludeFromContext }),
