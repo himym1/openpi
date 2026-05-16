@@ -3145,14 +3145,17 @@ body.panel-dragging {
   gap: 6px;
   min-height: 28px;
   min-width: 0;
-  overflow: hidden;
+  /* overflow must remain visible so the ctx-picker (position:absolute) can
+     extend above the toolbar without being clipped. Text truncation is handled
+     per-label via .composer-tool-label { overflow:hidden; text-overflow:ellipsis } */
+  overflow: visible;
 }
 .composer-toolbar-left {
   display: flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 .composer-toolbar-right {
   display: flex;

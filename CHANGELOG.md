@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Add context file picker invisible** — `overflow: hidden` on `.composer-toolbar` and `.composer-toolbar-left` was clipping the absolutely-positioned `.ctx-picker` before it could extend above the toolbar. Changed both to `overflow: visible`; per-label text truncation (`.composer-tool-label`) is unaffected since it has its own `max-width`/`overflow: hidden`/`text-overflow: ellipsis`.
+
 ## [0.1.13] - 2026-05-16
 
 OpenPi v0.1.13 focuses on the desktop workbench experience: persistent file preview tabs, a bottom utility bar, safer archived-session cleanup, smoother composer history recall, and more reliable markdown/code rendering.
