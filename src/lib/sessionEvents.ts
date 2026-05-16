@@ -7,74 +7,89 @@ export function applySessionEvent(
   currentModelName?: string | null,
   currentTurnStartMs?: number | null
 ): Message[] {
-  const next = [...messages]
-
+  /*
+   * PERF: no upfront spread. Each case creates `next` only when it actually
+   * needs to modify the array. Early-exit paths and the `default` case return
+   * the original `messages` reference so downstream memos (groupMessages,
+   * aggregateUsage) see no change and skip recomputation.
+   */
   switch (event.type) {
     case 'message_start': {
       const msg = event.message as { role: string; content?: unknown; timestamp?: number }
       if (msg.role === 'user') {
-        next.push({
-          id: `u-${msg.timestamp ?? Date.now()}`,
-          role: 'user',
-          text: contentToText(msg.content),
-          toolCards: [],
-        })
-      } else if (msg.role === 'assistant') {
-        next.push({
-          id: `a-${msg.timestamp ?? Date.now()}`,
-          role: 'assistant',
-          text: '',
-          toolCards: [],
-          streaming: true,
-          modelName: currentModelName || undefined,
-        })
+        return [
+          ...messages,
+          {
+            id: `u-${msg.timestamp ?? Date.now()}`,
+            role: 'user',
+            text: contentToText(msg.content),
+            toolCards: [],
+          },
+        ]
       }
-      return next
+      if (msg.role === 'assistant') {
+        return [
+          ...messages,
+          {
+            id: `a-${msg.timestamp ?? Date.now()}`,
+            role: 'assistant',
+            text: '',
+            toolCards: [],
+            streaming: true,
+            modelName: currentModelName || undefined,
+          },
+        ]
+      }
+      return messages
     }
 
     case 'message_update': {
-      const last = next.at(-1)
-      if (!last || last.role !== 'assistant') return next
+      // Hot path: fired 100s–1000s of times during streaming.
+      // Only copy when there is an actual delta to apply.
+      const last = messages.at(-1)
+      if (!last || last.role !== 'assistant') return messages
       type AssistantMsg = { text: string; thinking?: string } & typeof last
       const lastA = last as AssistantMsg
       const assistantEvent = event.assistantMessageEvent as
         | { type: string; delta?: string }
         | undefined
       if (assistantEvent?.type === 'text_delta' && assistantEvent.delta) {
+        const next = [...messages]
         next[next.length - 1] = { ...lastA, text: lastA.text + assistantEvent.delta } as Message
-      } else if (assistantEvent?.type === 'thinking_delta' && assistantEvent.delta) {
+        return next
+      }
+      if (assistantEvent?.type === 'thinking_delta' && assistantEvent.delta) {
+        const next = [...messages]
         next[next.length - 1] = {
           ...lastA,
           thinking: (lastA.thinking ?? '') + assistantEvent.delta,
         } as Message
+        return next
       }
-      return next
+      return messages // no applicable delta — no copy
     }
 
     case 'message_end': {
-      const msg = event.message as {
-        role: string
-        timestamp?: number
-        usage?: UsageLike
-      }
-      const last = next.at(-1)
-      if (last?.role === 'assistant') {
-        const durationMs = durationFrom(currentTurnStartMs, msg.timestamp)
-        next[next.length - 1] = {
-          ...last,
-          streaming: false,
-          ...(msg.usage ? usageToMessageMetrics(msg.usage) : {}),
-          ...(durationMs ? { durationMs } : {}),
-        } as Message
-      }
+      const msg = event.message as { role: string; timestamp?: number; usage?: UsageLike }
+      const last = messages.at(-1)
+      if (last?.role !== 'assistant') return messages
+      const durationMs = durationFrom(currentTurnStartMs, msg.timestamp)
+      const next = [...messages]
+      next[next.length - 1] = {
+        ...last,
+        streaming: false,
+        ...(msg.usage ? usageToMessageMetrics(msg.usage) : {}),
+        ...(durationMs ? { durationMs } : {}),
+      } as Message
       return next
     }
 
     case 'tool_execution_start': {
-      const last = next.at(-1)
-      if (!last || last.role !== 'assistant') return next
+      const last = messages.at(-1)
+      if (!last || last.role !== 'assistant') return messages
       type AssistantMsg = { toolCards: ToolCard[] } & typeof last
       const lastA = last as AssistantMsg
+      const next = [...messages]
       next[next.length - 1] = {
         ...lastA,
         toolCards: [
@@ -93,12 +108,14 @@ export function applySessionEvent(
     }
 
     case 'tool_execution_update': {
-      const last = next.at(-1)
-      if (!last || last.role !== 'assistant') return next
+      // Also a hot path during long-running tool calls.
+      const last = messages.at(-1)
+      if (!last || last.role !== 'assistant') return messages
       type AssistantMsg = { toolCards: ToolCard[] } & typeof last
       const lastA = last as AssistantMsg
       const toolCallId = event.toolCallId as string
       const output = resultText(event.partialResult)
+      const next = [...messages]
       next[next.length - 1] = {
         ...lastA,
         toolCards: lastA.toolCards.map((card) =>
@@ -109,12 +126,13 @@ export function applySessionEvent(
     }
 
     case 'tool_execution_end': {
-      const last = next.at(-1)
-      if (!last || last.role !== 'assistant') return next
+      const last = messages.at(-1)
+      if (!last || last.role !== 'assistant') return messages
       type AssistantMsg = { toolCards: ToolCard[] } & typeof last
       const lastA = last as AssistantMsg
       const toolCallId = event.toolCallId as string
       const output = resultText(event.result)
+      const next = [...messages]
       next[next.length - 1] = {
         ...lastA,
         toolCards: lastA.toolCards.map((card) =>
@@ -136,12 +154,12 @@ export function applySessionEvent(
         text: 'Compacting context…',
         done: false,
       }
-      next.push(sys)
-      return next
+      return [...messages, sys]
     }
 
     case 'compaction_end': {
       const e = event as CompactionEndEvent
+      const next = [...messages]
       const idx = [...next]
         .reverse()
         .findIndex(
@@ -164,7 +182,6 @@ export function applySessionEvent(
         const realIdx = next.length - 1 - idx
         next[realIdx] = { ...(next[realIdx] as SystemMessage), ...compactionData }
       } else {
-        // No matching start — still show the result
         next.push({
           id: `compact-end-${Date.now()}`,
           role: 'system',
@@ -189,12 +206,12 @@ export function applySessionEvent(
         text: `Auto-retry ${e.attempt ?? 1}/${e.maxAttempts ?? '?'} — ${e.errorMessage ?? 'error'}`,
         done: false,
       }
-      next.push(sys)
-      return next
+      return [...messages, sys]
     }
 
     case 'auto_retry_end': {
       const e = event as { success?: boolean; attempt?: number; finalError?: string }
+      const next = [...messages]
       const idx = [...next]
         .reverse()
         .findIndex(
@@ -222,7 +239,8 @@ export function applySessionEvent(
     }
 
     default:
-      return next
+      // Unknown event — return the original array, no copy, no reactivity.
+      return messages
   }
 }
 

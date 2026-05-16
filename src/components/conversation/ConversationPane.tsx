@@ -1,6 +1,7 @@
 import logoUrl from '@icons/icon.svg'
 import { ArrowDown, Clock3, FolderOpen, GitBranch } from 'lucide-solid'
 import { type Component, createEffect, createMemo, createSignal, Show } from 'solid-js'
+import { createStore, reconcile } from 'solid-js/store'
 import { VList, type VListHandle } from 'virtua/solid'
 import type { DisplayPreferences } from '../../lib/displayPreferences'
 import type { SessionHistoryMessage, WorkspaceSummaryInfo } from '../../lib/ipc'
@@ -117,7 +118,21 @@ type ConversationPaneProps = {
 }
 
 export const ConversationPane: Component<ConversationPaneProps> = (props) => {
-  const items = createMemo(() => groupMessages(props.messages))
+  /*
+   * Stable render items — prevents AssistantMessageGroup from unmounting when
+   * the messages array changes on every streaming delta.
+   *
+   * Without reconcile: every text_delta → new messages signal → new RenderItem[]
+   * → <For> sees new array → destroys + recreates every AssistantMessageGroup.
+   *
+   * With reconcile(key:'id', merge:true): items matched by their stable id are
+   * updated in-place. The group's `messages` field updates, but the component
+   * instance is kept alive → its internal segment-store handles the delta.
+   */
+  const [items, setItems] = createStore<RenderItem[]>([])
+  createEffect(() => {
+    setItems(reconcile(groupMessages(props.messages), { key: 'id', merge: true }))
+  })
 
   let listRef: VListHandle | undefined
   const [showScrollBtn, setShowScrollBtn] = createSignal(false)
@@ -126,7 +141,7 @@ export const ConversationPane: Component<ConversationPaneProps> = (props) => {
   const [isAtBottom, setIsAtBottom] = createSignal(true)
 
   const scrollToBottomIndex = (smooth = false) => {
-    const lastIndex = items().length - 1
+    const lastIndex = items.length - 1
     if (!listRef || lastIndex < 0) return
     listRef.scrollToIndex(lastIndex, { align: 'end', smooth })
   }
@@ -261,7 +276,7 @@ export const ConversationPane: Component<ConversationPaneProps> = (props) => {
           <VList
             class="message-list"
             style={{ height: '100%' }}
-            data={items()}
+            data={items}
             bufferSize={300}
             onScroll={updateScrollState}
             ref={(handle) => {
@@ -273,7 +288,7 @@ export const ConversationPane: Component<ConversationPaneProps> = (props) => {
               <div
                 class="message-list-item"
                 style={{
-                  'padding-top': `${getTopSpacing(items(), index())}px`,
+                  'padding-top': `${getTopSpacing(items, index())}px`,
                 }}
               >
                 {renderTimelineItem(item)}

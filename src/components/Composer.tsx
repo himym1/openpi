@@ -870,7 +870,7 @@ export const Composer: Component<ComposerProps> = (props) => {
     }
   }
 
-  const keybindingEntries = () => buildKeybindingEntries(customKeybindings())
+  const keybindingEntries = createMemo(() => buildKeybindingEntries(customKeybindings()))
   const binding = (actionId: KeybindingActionId) => findBinding(keybindingEntries(), actionId)
 
   onMount(() => {
