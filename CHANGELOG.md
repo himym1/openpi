@@ -1,16 +1,27 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.14] - 2026-05-16
 
 ### Added
 
+- **Delivery mode keybindings** — `Alt+↑` activates interrupt (steer) mode while the agent is running; `Alt+↓` activates follow-up (queue) mode. Both toggle: pressing the same key again resets back to normal prompt mode. Both actions are registered in the keybinding system as `steerMode` / `followupMode` and are remappable from the Keybindings pane.
+- **Delivery mode reset button** — a `RotateCcw` icon button appears in the composer toolbar whenever a delivery mode is active, colour-tinted to match the active mode (amber = interrupt, blue = follow-up). Clicking it resets the delivery mode back to normal.
 - **Rich compaction card** — compaction events now surface the full file context that Pi's TUI shows. After auto-compact, a collapsible "files" badge appears inline with the `Compacted from N tokens` pill. Expanding it shows `Modified` and `Read` file lists (pill-tagged with amber/neutral colours) extracted from the SDK `CompactionResult.details`. The `reason` field (`manual`/`threshold`/`overflow`) is also reflected in the card text (e.g. "Manually compacted from N tokens").
 
 ### Fixed
 
 - **Add context file picker invisible** — `overflow: hidden` on `.composer-toolbar` and `.composer-toolbar-left` was clipping the absolutely-positioned `.ctx-picker` before it could extend above the toolbar. Changed both to `overflow: visible`; per-label text truncation (`.composer-tool-label`) is unaffected since it has its own `max-width`/`overflow: hidden`/`text-overflow: ellipsis`.
 
-## [0.1.13] - 2026-05-16
+### Performance
+
+- **Eliminated thinking-block flicker** — `buildSegments()` was returning new object references on every `thinking_delta` event, causing `<For>` to destroy and remount `ThinkingBlock` and `MarkdownContent` on every streaming token. The resulting `html()` reset to `''` produced a visible phase-1 plain-flash. Fixed with `createStore + reconcile({ key: 'id', merge: true })` in `AssistantMessageGroup`: segments matched by stable id are now updated in-place on the same store proxy, so `<For>` sees the same reference and keeps components alive.
+- **Eliminated `AssistantMessageGroup` remounts** — `groupMessages()` was returning a brand-new `RenderItem[]` on every delta, causing `<For>` in `ConversationPane` to destroy and recreate every `AssistantMessageGroup`. Fixed with the same `createStore + reconcile` pattern at the conversation level: groups are matched by their stable id and updated in-place.
+- **Lazy `applySessionEvent` copies** — removed the unconditional `const next = [...messages]` upfront spread. Each case now creates a local copy only when it actually modifies the array. Early-exit paths and the `default` case return the original reference unchanged, so downstream memos (`groupMessages`, `aggregateUsage`) skip recomputation for events that touch nothing.
+- **`allText` deferred to copy-click** — the full-text string join across all assistant messages was running on every streaming delta but was only needed when the user clicks the copy button. Changed `MessageActions` to accept a `getText` thunk called only at click time.
+- **`keybindingEntries` memoised** — `buildKeybindingEntries()` was rebuilt on every `keydown` event via a plain lambda. Changed to `createMemo` so the result map is rebuilt only when keybinding preferences actually change.
+- **Removed no-op `contextPercentValue` memo** — `createMemo(() => contextPercent())` wrapping a plain signal adds an unnecessary reactive layer. Replaced with direct `contextPercent()` access.
+
+ - 2026-05-16
 
 OpenPi v0.1.13 focuses on the desktop workbench experience: persistent file preview tabs, a bottom utility bar, safer archived-session cleanup, smoother composer history recall, and more reliable markdown/code rendering.
 
