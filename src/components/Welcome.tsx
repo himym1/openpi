@@ -61,7 +61,7 @@ export function Welcome(props: WelcomeProps) {
               <ExternalLink size={13} /> Pi repo
             </a>
             <a
-              href="https://github.com/huynhgiabuu/openpi"
+              href="https://github.com/heyhuynhgiabuu/openpi"
               target="_blank"
               rel="noopener noreferrer"
               class="welcome-link"
