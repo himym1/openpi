@@ -1,4 +1,4 @@
-import { Bookmark, FileCog, GitFork, GitMerge, MessageSquare, Shrink } from 'lucide-solid'
+import { Bookmark, FileCog, GitFork, GitMerge, MessageSquare, Shrink, X } from 'lucide-solid'
 import {
   type Component,
   createEffect,
@@ -11,8 +11,10 @@ import {
 import type { ForkPoint, SessionTreeResponse, TreeEntryNode } from '../../lib/ipc'
 
 type SessionTreePanelProps = {
+  style?: Record<string, string | number | undefined>
   sessionPath: string | null
   onScrollToMessage: (entryId: string) => void
+  onClose?: () => void
   /** Bump to trigger a re-fetch of tree data (used for live refresh during streaming). */
   refreshTrigger?: number
 }
@@ -50,6 +52,8 @@ export const SessionTreePanel: Component<SessionTreePanelProps> = (props) => {
   const [error, setError] = createSignal<string | null>(null)
   const [collapsedBranches, setCollapsedBranches] = createSignal<Set<string>>(new Set())
   const [collapsedForkDetails, setCollapsedForkDetails] = createSignal<Set<string>>(new Set())
+  const [searchQuery, setSearchQuery] = createSignal('')
+  const [focusedId, setFocusedId] = createSignal<string | null>(null)
 
   // ── Fetch tree data when session path or refresh trigger changes ───────────
   createEffect(() => {
@@ -116,6 +120,22 @@ export const SessionTreePanel: Component<SessionTreePanelProps> = (props) => {
     if (m.compactions > 0) parts.push(formatCount(m.compactions, 'compaction'))
     if (m.labels > 0) parts.push(formatCount(m.labels, 'label'))
     return parts.join(' · ')
+  })
+
+  const filteredBranches = createMemo(() => {
+    const q = searchQuery().toLowerCase().trim()
+    if (!q) return treeData()?.branches ?? []
+    const matches = (n: TreeEntryNode) =>
+      !!(
+        n.contentPreview?.toLowerCase().includes(q) ||
+        n.summary?.toLowerCase().includes(q) ||
+        n.role?.toLowerCase().includes(q) ||
+        n.type?.toLowerCase().includes(q) ||
+        n.modelId?.toLowerCase().includes(q)
+      )
+    return (treeData()?.branches ?? [])
+      .map((b) => ({ ...b, nodes: b.nodes.filter(matches) }))
+      .filter((b) => b.nodes.length > 0)
   })
 
   const toggleBranch = (leafId: string) => {
@@ -240,10 +260,26 @@ export const SessionTreePanel: Component<SessionTreePanelProps> = (props) => {
     Boolean(nodeMeta(node) || isActiveLeaf(node.id) || fp || node.type === 'label')
 
   return (
-    <aside class="session-tree-panel" aria-label="Session map">
+    <aside
+      class="session-tree-panel"
+      style={props.style}
+      aria-label="Session map"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') props.onClose?.()
+      }}
+    >
       <header class="stp-header">
         <div class="stp-title-row">
           <div class="eyebrow">Session Map</div>
+          <button
+            type="button"
+            class="stp-close-btn"
+            onClick={() => props.onClose?.()}
+            aria-label="Close session map"
+          >
+            <X size={12} />
+          </button>
           <Show when={treeData() && treeData()!.branches.length > 0}>
             <span class="stp-current-leaf">
               <span class="stp-current-dot" aria-hidden="true" />
@@ -256,6 +292,17 @@ export const SessionTreePanel: Component<SessionTreePanelProps> = (props) => {
           fallback={<div class="stp-subtitle">Root → leaf paths, forks, labels, compactions</div>}
         >
           <div class="stp-subtitle">{summaryParts()} · current leaf</div>
+        </Show>
+        <Show when={treeData() && treeData()!.branches.length > 0}>
+          <div class="stp-search-wrap">
+            <input
+              type="search"
+              class="stp-search"
+              placeholder="Filter entries…"
+              value={searchQuery()}
+              onInput={(e) => setSearchQuery(e.currentTarget.value)}
+            />
+          </div>
         </Show>
       </header>
 
@@ -283,9 +330,41 @@ export const SessionTreePanel: Component<SessionTreePanelProps> = (props) => {
           <div class="stp-empty">No session tree data found.</div>
         </Show>
 
-        <Show when={treeData() && treeData()!.branches.length > 0}>
-          <div class="stp-branch-list">
-            <For each={treeData()!.branches}>
+        <Show when={filteredBranches().length === 0 && searchQuery().trim().length > 0}>
+          <div class="stp-empty">No entries match “{searchQuery()}”.</div>
+        </Show>
+
+        <Show when={filteredBranches().length > 0}>
+          <div
+            class="stp-branch-list"
+            role="listbox"
+            aria-label="Session map entries"
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault()
+                const all = e.currentTarget.querySelectorAll<HTMLButtonElement>('.stp-node')
+                const cur = focusedId()
+                const idx = Array.from(all).findIndex((el) => el.dataset.entryId === cur)
+                const next =
+                  e.key === 'ArrowDown'
+                    ? idx >= 0 && idx < all.length - 1
+                      ? all[idx + 1]
+                      : all[0]
+                    : idx > 0
+                      ? all[idx - 1]
+                      : all[all.length - 1]
+                if (next) {
+                  next.focus()
+                  next.click()
+                }
+              } else if (e.key === 'Enter') {
+                e.preventDefault()
+                const cur = focusedId()
+                if (cur) props.onScrollToMessage(cur)
+              }
+            }}
+          >
+            <For each={filteredBranches()}>
               {(branch, index) => {
                 const isCollapsed = () => collapsedBranches().has(branch.leafId)
                 const isActive = () => activeLeafId() === branch.leafId
@@ -334,7 +413,9 @@ export const SessionTreePanel: Component<SessionTreePanelProps> = (props) => {
                               >
                                 <button
                                   type="button"
-                                  class={`stp-node stp-node--${tone()}${isActiveLeaf(node.id) ? ' stp-node--active' : ''}`}
+                                  class={`stp-node stp-node--${tone()}${isActiveLeaf(node.id) ? ' stp-node--active' : ''}${focusedId() === node.id ? ' stp-node--focused' : ''}`}
+                                  data-entry-id={node.id}
+                                  onFocus={() => setFocusedId(node.id)}
                                   onClick={() => props.onScrollToMessage(node.id)}
                                   title={`${nodeTitle(node)} · ${node.id}`}
                                 >

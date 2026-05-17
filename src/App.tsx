@@ -781,11 +781,13 @@ export default function App() {
                 </Show>
                 <Show when={leftDrawerMode() === 'tree'}>
                   <SessionTreePanel
+                    style={{ width: `${sidebarWidth()}px` }}
                     sessionPath={activeSessionPath()}
                     onScrollToMessage={(entryId) => {
                       scrollToMessageNonce++
                       setScrollToMessageId(`${entryId}:${scrollToMessageNonce.toString(36)}`)
                     }}
+                    onClose={() => setSidebarOpen(false)}
                     refreshTrigger={treeRefreshVersion()}
                   />
                 </Show>
