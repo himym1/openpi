@@ -760,9 +760,13 @@ export function searchFileContents(
 
 /**
  * Generates a conventional commit message from staged files.
- * Pure heuristic — no Pi session or network call needed.
+ * Uses agent context (last Pi assistant message summary) when available
+ * for more descriptive commit messages, falls back to pure heuristic.
  */
-export function generateCommitMessage(stagedFiles: GitChangedFile[]): string {
+export function generateCommitMessage(
+  stagedFiles: GitChangedFile[],
+  agentContext?: string
+): string {
   if (stagedFiles.length === 0) return ''
 
   const added = stagedFiles.filter((f) => f.status === 'A')
@@ -776,10 +780,18 @@ export function generateCommitMessage(stagedFiles: GitChangedFile[]): string {
   // Detect conventional commit type from file patterns
   const type = detectType(stagedFiles)
 
-  // Build human-readable summary
-  const summary = buildSummary({ added, modified, deleted, renamed })
-
   const prefix = scope ? `${type}(${scope})` : type
+
+  // If agent context is available, use it to produce a more descriptive summary
+  if (agentContext && agentContext.length > 0) {
+    const agentSummary = summarizeContext(agentContext)
+    const fileList = stagedFiles.map((f) => basename(f.path)).join(', ')
+    // Combine: structured prefix + agent-driven summary + file list
+    return `${prefix}: ${agentSummary}\n\nFiles: ${fileList}`
+  }
+
+  // Fallback: pure heuristic summary
+  const summary = buildSummary({ added, modified, deleted, renamed })
   return `${prefix}: ${summary}`
 }
 
@@ -878,6 +890,30 @@ function buildSummary({
   if (deleted.length) parts.push(`remove ${deleted.length} file${deleted.length > 1 ? 's' : ''}`)
   if (renamed.length) parts.push(`rename ${renamed.length} file${renamed.length > 1 ? 's' : ''}`)
   return parts.join(', ')
+}
+
+/**
+ * Extract a concise summary from the agent's last message.
+ * Takes the first 1-2 sentences (up to ~120 chars) to keep the commit title focused.
+ */
+function summarizeContext(context: string): string {
+  // Strip leading/trailing whitespace
+  let text = context.trim()
+  // Remove markdown code blocks
+  text = text.replace(/```[\s\S]*?```/g, '')
+  // Remove thinking blocks
+  text = text.replace(/<think>[\s\S]*?<\/think>/g, '')
+  // Take first 1-2 sentences
+  const sentences = text.match(/[^.!?]+[.!?]+/g)
+  if (sentences && sentences.length > 0) {
+    const summary = (sentences[0] + (sentences[1] ? ` ${sentences[1]}` : '')).trim()
+    if (summary.length <= 120) return summary
+    return `${summary.slice(0, 117).trimEnd()}...`
+  }
+  // Fallback: first line, capped
+  const firstLine = text.split('\n')[0]?.trim() ?? ''
+  if (firstLine.length > 120) return `${firstLine.slice(0, 117).trimEnd()}...`
+  return firstLine
 }
 
 function basename(p: string): string {

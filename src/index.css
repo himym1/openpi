@@ -8080,6 +8080,14 @@ body.panel-dragging {
   border-bottom: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
   font-size: 11px;
   color: var(--steel);
+  transition: background 0.15s;
+}
+.git-agent-banner:hover {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+}
+.git-agent-banner.is-active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .git-agent-banner-dismiss {
   flex-shrink: 0;
@@ -8094,6 +8102,134 @@ body.panel-dragging {
 .git-agent-banner-dismiss:hover {
   color: var(--steel);
   background: rgba(255, 255, 255, 0.08);
+}
+
+/* Clickable review area inside banner */
+.git-agent-banner-review {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: inherit;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+.git-agent-banner-review:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* Agent-changed pinned section ─────────────────────────────── */
+.git-section--agent {
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.git-section--agent .git-section-title {
+  color: var(--accent);
+}
+
+/* Show all changes button inside agent section ─────────────── */
+.git-show-all-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--ash) 30%, transparent);
+  color: var(--ash);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.git-show-all-btn:hover {
+  border-color: var(--steel);
+  color: var(--steel);
+}
+
+/* Agent banner tooltip ─────────────────────────────────────── */
+.git-tooltip-content {
+  z-index: 1000;
+  max-height: min(40vh, 320px);
+  overflow-y: auto;
+  background: var(--surface-card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  padding: 6px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+
+  transform-origin: var(--kb-tooltip-content-transform-origin);
+  animation: gitTooltipHide 150ms ease-in forwards;
+}
+.git-tooltip-content[data-expanded] {
+  animation: gitTooltipShow 150ms ease-out;
+}
+
+@keyframes gitTooltipShow {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes gitTooltipHide {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+.git-tooltip-header {
+  padding: 4px 10px 6px;
+  color: var(--ink-soft);
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--hairline-soft);
+  margin-bottom: 2px;
+}
+.git-tooltip-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+.git-tooltip-path {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--ink);
+}
+.git-tooltip-status {
+  flex-shrink: 0;
+  width: 12px;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+}
+.git-tooltip-status--M { color: #f0c674; }
+.git-tooltip-status--A { color: #8bc34a; }
+.git-tooltip-status--D { color: #e06c75; }
+.git-tooltip-status--R { color: #c678dd; }
+.git-tooltip-status--\? { color: #61afef; }
+.git-tooltip-status--U { color: #e5c07b; }
+.git-tooltip-overflow {
+  color: var(--ash);
+  font-style: italic;
+  font-size: 10px;
 }
 
 /* ─── Secondary panel (right-side tabbed panel) ──────────────────────────────── */

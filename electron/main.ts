@@ -726,9 +726,10 @@ function handleSidecarMessage(msg: SidecarMessage): void {
           void getGitHost().then(async (git) => {
             try {
               const status = await git.getGitStatus(cwd)
-              const changed = status?.files.length ?? 0
+              const files = status?.files ?? []
+              const changed = files.length
               if (changed > 0) {
-                mainWindow?.webContents.send(IPC.AGENT_CHANGED_FILES, { count: changed })
+                mainWindow?.webContents.send(IPC.AGENT_CHANGED_FILES, { count: changed, files })
               }
             } catch {
               // non-fatal — git may not be available in all workspaces
@@ -1513,7 +1514,28 @@ function registerHandlers(): void {
       const git = await getGitHost()
       const status = await git.getGitStatus(state.cwd)
       const staged = status?.files.filter((f) => f.staged) ?? []
-      const message = git.generateCommitMessage(staged)
+
+      // Try to retrieve agent context from the last assistant message
+      let agentContext: string | undefined
+      if (state?.sessionFile && sessionIndex) {
+        try {
+          const page = await sessionIndex.getSessionMessages(state.sessionFile, {
+            limit: 10,
+          })
+          // Find the last assistant message (going backwards)
+          for (let i = page.messages.length - 1; i >= 0; i--) {
+            const msg = page.messages[i]
+            if (msg?.role === 'assistant' && msg.text) {
+              agentContext = msg.text
+              break
+            }
+          }
+        } catch {
+          // non-fatal — session messages may not be available
+        }
+      }
+
+      const message = git.generateCommitMessage(staged, agentContext)
       return { message }
     }
   )

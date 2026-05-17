@@ -8,7 +8,6 @@
 import { ArrowUp, ArrowUpDown, ChevronDown, GripVertical, Search, Sparkles } from 'lucide-solid'
 import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
-
 import type {
   GitChangedFile,
   GitFileDiff,
@@ -17,6 +16,13 @@ import type {
   GitStatusResult,
   GitSyncAction,
 } from '../../lib/ipc'
+import {
+  TooltipArrow,
+  TooltipContent,
+  TooltipPortal,
+  TooltipRoot,
+  TooltipTrigger,
+} from '../ui/tooltip'
 import { ConflictResolverModal } from './ConflictResolverModal'
 
 type GitPanelTab = 'changes' | 'history'
@@ -66,7 +72,11 @@ export function GitPanel(props: GitPanelProps) {
   const [commitMessage, setCommitMessage] = createSignal('')
   const [isCommitting, setIsCommitting] = createSignal(false)
   const [isGeneratingMsg, setIsGeneratingMsg] = createSignal(false)
-  const [agentChangedCount, setAgentChangedCount] = createSignal<number | null>(null)
+  const [agentChangedFiles, setAgentChangedFiles] = createSignal<{
+    count: number
+    files: GitChangedFile[]
+  } | null>(null)
+  const [showingAgentChanges, setShowingAgentChanges] = createSignal(false)
   const [commitOptionsOpen, setCommitOptionsOpen] = createSignal(false)
   const [commitAmend, setCommitAmend] = createSignal(false)
   const [commitSignoff, setCommitSignoff] = createSignal(false)
@@ -95,8 +105,9 @@ export function GitPanel(props: GitPanelProps) {
   onMount(() => {
     window.openpi.notifyGitPanelMounted()
     // Listen for agent-changed-files events from main process
-    const unsub = window.openpi.git.onAgentChangedFiles((count) => {
-      setAgentChangedCount(count)
+    const unsub = window.openpi.git.onAgentChangedFiles((payload) => {
+      setAgentChangedFiles(payload)
+      setShowingAgentChanges(false)
     })
     return unsub
   })
@@ -274,20 +285,53 @@ export function GitPanel(props: GitPanelProps) {
     }
   }
 
+  // Agent-changed file paths set for quick lookup
+  const agentFilePaths = createMemo(
+    () => new Set(agentChangedFiles()?.files.map((f) => f.path) ?? [])
+  )
+
+  // Pinned agent-changed files that still exist in the current status
+  const pinnedAgentFiles = createMemo(
+    () => status()?.files.filter((f) => agentFilePaths().has(f.path)) ?? []
+  )
+
+  // When in review mode, show only agent-changed files; otherwise show everything
+  const showingAgentFiles = createMemo(
+    () => showingAgentChanges() && agentChangedFiles() !== null && pinnedAgentFiles().length > 0
+  )
+
   const conflictFiles = createMemo(() => status()?.files.filter((f) => f.status === 'U') ?? [])
   const stagedFiles = createMemo(
-    () => status()?.files.filter((f) => f.staged && f.status !== 'U') ?? []
+    () =>
+      (showingAgentFiles() ? pinnedAgentFiles() : status()?.files)?.filter(
+        (f) => f.staged && f.status !== 'U'
+      ) ?? []
   )
   const unstagedFiles = createMemo(
-    () => status()?.files.filter((f) => !f.staged && f.status !== '?' && f.status !== 'U') ?? []
+    () =>
+      (showingAgentFiles() ? pinnedAgentFiles() : status()?.files)?.filter(
+        (f) => !f.staged && f.status !== '?' && f.status !== 'U'
+      ) ?? []
   )
   const untrackedFiles = createMemo(
     () => status()?.files.filter((f) => !f.staged && f.status === '?') ?? []
   )
   const stageableFiles = createMemo(
-    () => status()?.files.filter((f) => !f.staged && f.status !== 'U') ?? []
+    () =>
+      (showingAgentFiles() ? pinnedAgentFiles() : status()?.files)?.filter(
+        (f) => !f.staged && f.status !== 'U'
+      ) ?? []
   )
   const totalChanged = createMemo(() => status()?.files.length ?? 0)
+
+  const handleReviewAgentChanges = () => {
+    setShowingAgentChanges((prev) => !prev)
+  }
+
+  const handleDismissAgentChanges = () => {
+    setAgentChangedFiles(null)
+    setShowingAgentChanges(false)
+  }
   const branchLabel = createMemo(() => {
     const current = status()
     if (!current) return ''
@@ -364,16 +408,45 @@ export function GitPanel(props: GitPanelProps) {
 
       <Show when={activeTab() === 'changes'}>
         <div class="git-panel-body">
-          <Show when={agentChangedCount() !== null}>
-            <div class="git-agent-banner">
-              <span>
-                ✨ Agent modified {agentChangedCount()} file{agentChangedCount() !== 1 ? 's' : ''} —
-                review before committing
-              </span>
+          <Show when={agentChangedFiles() !== null}>
+            <div class={`git-agent-banner${showingAgentFiles() ? ' is-active' : ''}`}>
+              <TooltipRoot openDelay={300} closeDelay={100}>
+                <TooltipTrigger
+                  as="button"
+                  type="button"
+                  class="git-agent-banner-review"
+                  onClick={handleReviewAgentChanges}
+                >
+                  ✨ Agent modified {agentChangedFiles()!.count} file
+                  {agentChangedFiles()!.count !== 1 ? 's' : ''}
+                  {showingAgentFiles() ? ' (filtered)' : ' — click to review'}
+                </TooltipTrigger>
+                <TooltipPortal>
+                  <TooltipContent class="git-tooltip-content">
+                    <div class="git-tooltip-header">Agent changed files</div>
+                    <For each={agentChangedFiles()!.files.slice(0, 15)}>
+                      {(file) => (
+                        <div class="git-tooltip-file-row">
+                          <span class={`git-tooltip-status git-tooltip-status--${file.status}`}>
+                            {file.status}
+                          </span>
+                          <span class="git-tooltip-path">{file.path}</span>
+                        </div>
+                      )}
+                    </For>
+                    <Show when={agentChangedFiles()!.files.length > 15}>
+                      <div class="git-tooltip-file-row git-tooltip-overflow">
+                        … and {agentChangedFiles()!.files.length - 15} more
+                      </div>
+                    </Show>
+                    <TooltipArrow size={6} />
+                  </TooltipContent>
+                </TooltipPortal>
+              </TooltipRoot>
               <button
                 type="button"
                 class="git-agent-banner-dismiss"
-                onClick={() => setAgentChangedCount(null)}
+                onClick={handleDismissAgentChanges}
                 title="Dismiss"
               >
                 ✕
@@ -381,11 +454,11 @@ export function GitPanel(props: GitPanelProps) {
             </div>
           </Show>
           <Show when={status()} fallback={<div class="git-panel-empty">Loading git status…</div>}>
-            <Show when={totalChanged() === 0}>
+            <Show when={!showingAgentFiles() && totalChanged() === 0}>
               <div class="git-panel-empty">No changes to commit</div>
             </Show>
 
-            <Show when={totalChanged() > 0}>
+            <Show when={showingAgentFiles() || totalChanged() > 0}>
               <Show when={stageableFiles().length > 0}>
                 <div class="git-worktree-actions">
                   <span>{stageableFiles().length} unstaged</span>
@@ -397,6 +470,38 @@ export function GitPanel(props: GitPanelProps) {
                     Stage All
                   </button>
                 </div>
+              </Show>
+
+              <Show when={showingAgentFiles() && pinnedAgentFiles().length === 0}>
+                <div class="git-panel-empty">
+                  Agent-changed files have been committed or reverted
+                </div>
+              </Show>
+
+              <Show when={showingAgentFiles() && pinnedAgentFiles().length > 0}>
+                <section class="git-section git-section--agent">
+                  <div class="git-section-title">
+                    <span>✨ Agent Changed</span>
+                    <span class="git-section-count">{pinnedAgentFiles().length}</span>
+                    <button
+                      type="button"
+                      class="git-show-all-btn"
+                      onClick={() => setShowingAgentChanges(false)}
+                    >
+                      Show all changes
+                    </button>
+                  </div>
+                  <For each={pinnedAgentFiles()}>
+                    {(file) => (
+                      <GitFileRow
+                        file={file}
+                        loadingDiff={loadingDiff()}
+                        onFileClick={handleFileClick}
+                        onStageToggle={handleStageToggle}
+                      />
+                    )}
+                  </For>
+                </section>
               </Show>
 
               <Show when={conflictFiles().length > 0}>

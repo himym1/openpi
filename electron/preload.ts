@@ -16,6 +16,7 @@ import type {
   FileContentHit,
   FileTreeResult,
   GitBranchInfo,
+  GitChangedFile,
   GitCheckoutBranchResult,
   GitFileDiff,
   GitHistoryResult,
@@ -243,9 +244,11 @@ const api = {
     getFileTree: (): Promise<FileTreeResult | null> => ipcRenderer.invoke(IPC.GIT_FILE_TREE),
     generateCommitMessage: (): Promise<{ message: string } | null> =>
       ipcRenderer.invoke(IPC.GIT_GENERATE_COMMIT_MSG),
-    onAgentChangedFiles: (cb: (count: number) => void) => {
-      const handler = (_: Electron.IpcRendererEvent, payload: { count: number }) =>
-        cb(payload.count)
+    onAgentChangedFiles: (cb: (payload: { count: number; files: GitChangedFile[] }) => void) => {
+      const handler = (
+        _: Electron.IpcRendererEvent,
+        payload: { count: number; files: GitChangedFile[] }
+      ) => cb(payload)
       ipcRenderer.on(IPC.AGENT_CHANGED_FILES, handler)
       return () => ipcRenderer.removeListener(IPC.AGENT_CHANGED_FILES, handler)
     },
