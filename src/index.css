@@ -2669,33 +2669,9 @@ body.panel-dragging {
   background: transparent;
 }
 
-/* ── Code block line numbers ────────────────────────────────────── */
-.code-line-toggle {
-  font-size: 11px;
-  padding: 2px 7px;
-  border-radius: 4px;
-  border: 1px solid var(--hairline);
-  background: transparent;
-  color: var(--mute);
-  cursor: pointer;
-  font-family: var(--font-code);
-  line-height: 1.5;
-  transition: color 0.12s ease, border-color 0.12s ease;
-  flex-shrink: 0;
-  order: -1;
-}
-.code-line-toggle:hover {
-  color: var(--ink);
-  border-color: var(--hairline-strong);
-}
-.code-line-toggle[aria-pressed="true"] {
-  color: #4ade80;
-  border-color: #4ade80;
-}
-
-/* Line number element — hidden by default */
+/* Line number element — always visible */
 .line-num {
-  display: none;
+  display: inline-block;
   user-select: none;
   text-align: right;
   padding-right: 1.2em;
@@ -2703,17 +2679,6 @@ body.panel-dragging {
   color: var(--mute);
   opacity: 0.5;
   font-size: 0.9em;
-}
-
-/* Show line numbers when toggled */
-.code-block.show-line-numbers .line-num {
-  display: inline-block;
-}
-
-/* Adjust Shiki <pre> padding when line numbers are shown */
-.code-block.show-line-numbers > .shiki,
-.code-block.show-line-numbers > pre {
-  padding-left: 4px;
 }
 
 /* Bare <pre> blocks (plain-markdown fallback, no .code-block wrapper) */

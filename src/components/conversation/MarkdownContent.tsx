@@ -46,7 +46,6 @@ function resolveLang(raw: string): string {
 /**
  * Wrap shiki HTML output in a code block container with header.
  * Line numbers are injected into each <span class="line"> via regex.
- * The line-number toggle button uses event delegation.
  */
 function wrapCodeBlock(shikiHtml: string, rawLang: string): string {
   const display =
@@ -65,12 +64,11 @@ function wrapCodeBlock(shikiHtml: string, rawLang: string): string {
     }
   )
   return [
-    '<div class="code-block show-line-numbers">',
+    '<div class="code-block">',
     '<div class="code-block-header">',
     display
       ? `<span class="code-lang-badge">${display}</span>`
       : '<span class="code-lang-badge"></span>',
-    '<button class="code-line-toggle" type="button" aria-label="Toggle line numbers" aria-pressed="true">Ln✓</button>',
     '<button class="code-copy-btn" type="button" aria-label="Copy code">Copy</button>',
     '</div>',
     htmlWithLineNums,
@@ -223,23 +221,10 @@ export const MarkdownContent: Component<Props> = (props) => {
   })
 
   /**
-   * Event delegation for code-block header buttons:
-   * - .code-copy-btn: copies code content to clipboard
-   * - .code-line-toggle: toggles line numbers on the .code-block
+   * Event delegation for the code-block copy button.
    */
   const handleClick = (e: MouseEvent) => {
     const target = e.target as Element
-
-    // ── Line-number toggle ────────────────────────────────────────────
-    const lnBtn = target.closest<HTMLButtonElement>('.code-line-toggle')
-    if (lnBtn) {
-      const block = lnBtn.closest('.code-block')
-      if (!block) return
-      const isActive = block.classList.toggle('show-line-numbers')
-      lnBtn.setAttribute('aria-pressed', String(isActive))
-      lnBtn.textContent = isActive ? 'Ln✓' : 'Ln'
-      return
-    }
 
     // ── Copy button ───────────────────────────────────────────────────
     const btn = target.closest<HTMLButtonElement>('.code-copy-btn')
