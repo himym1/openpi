@@ -4,11 +4,16 @@ import path from 'node:path'
 import { createInterface } from 'node:readline'
 import Database from 'better-sqlite3'
 import type {
+  Branch,
+  ForkPoint,
   SessionHistoryMessage,
   SessionHistoryPage,
   SessionHistoryToolCard,
   SessionListItem,
   SessionListOptions,
+  SessionTreeResponse,
+  TreeEntryNode,
+  TreeEntryType,
   WorkspaceInfo,
   WorkspaceTrustResult,
 } from '../src/lib/ipc'
@@ -317,6 +322,73 @@ export class SessionIndexStore {
       return page
     } catch {
       return emptyHistoryPage(limit)
+    }
+  }
+
+  getSessionTree(sessionPath: string): SessionTreeResponse {
+    try {
+      const parsed = parseSessionFile(sessionPath)
+      const { entries } = parsed
+
+      if (entries.length === 0) {
+        return { sessionPath, branches: [], forkPoints: [], activeLeafId: null }
+      }
+
+      // ── Build adjacency: parentId → child entries ────────────────────────
+      const childrenOf = new Map<string | null, SessionEntry[]>()
+      const entryById = new Map<string, SessionEntry>()
+
+      // Track entries in JSONL file order so we can determine the active leaf.
+      // The last non-session entry in the file is the current leaf.
+      let lastEntryId: string | null = null
+
+      for (const entry of entries) {
+        entryById.set(entry.id, entry)
+        const list = childrenOf.get(entry.parentId) ?? []
+        list.push(entry)
+        childrenOf.set(entry.parentId, list)
+        lastEntryId = entry.id
+      }
+
+      // ── Detect fork points (entries with >1 child) ──────────────────────
+      const forkPoints: ForkPoint[] = []
+
+      for (const [parentId, children] of childrenOf) {
+        if (parentId === null) continue
+        if (children.length <= 1) continue
+
+        // Collect leaf IDs for each child branch
+        const childLeaves: string[] = []
+        for (const child of children) {
+          const leaves = collectLeaves(child.id, childrenOf)
+          childLeaves.push(...leaves)
+        }
+
+        forkPoints.push({
+          entryId: parentId,
+          childLeaves,
+          branchCount: children.length,
+        })
+      }
+
+      // ── Build branch list (all root-to-leaf paths) ───────────────────────
+      const rootId = entries.find((e) => e.parentId === null)?.id ?? null
+      const branches: Branch[] = []
+
+      if (rootId) {
+        const leafIds = collectLeaves(rootId, childrenOf)
+        for (const leafId of leafIds) {
+          const pathIds = traceToRoot(leafId, entryById)
+          const nodes: TreeEntryNode[] = buildTreeNodes(pathIds, entryById)
+          branches.push({ leafId, nodes })
+        }
+      }
+
+      const activeLeafId = lastEntryId
+
+      return { sessionPath, branches, forkPoints, activeLeafId }
+    } catch {
+      return { sessionPath, branches: [], forkPoints: [], activeLeafId: null }
     }
   }
 
@@ -780,6 +852,131 @@ function countBranches(entries: SessionEntry[]): number {
     (count, children) => count + Math.max(0, children - 1),
     0
   )
+}
+
+/**
+ * Collect all leaf entry IDs reachable from a starting entry ID.
+ * A leaf is an entry with no children in the adjacency map.
+ */
+function collectLeaves(
+  startId: string | null,
+  childrenOf: Map<string | null, SessionEntry[]>
+): string[] {
+  if (startId === null) return []
+
+  const leaves: string[] = []
+  const stack = [startId]
+  const visited = new Set<string>()
+
+  while (stack.length > 0) {
+    const id = stack.pop()!
+    if (visited.has(id)) continue
+    visited.add(id)
+
+    const kids = childrenOf.get(id)
+    if (!kids || kids.length === 0) {
+      leaves.push(id)
+    } else {
+      for (const kid of kids) {
+        if (!visited.has(kid.id)) stack.push(kid.id)
+      }
+    }
+  }
+
+  return leaves
+}
+
+/**
+ * Trace from a leaf entry back to the root, returning entry IDs ordered root → leaf.
+ */
+function traceToRoot(leafId: string, entryById: Map<string, SessionEntry>): string[] {
+  const path: string[] = [leafId]
+  let current = entryById.get(leafId)?.parentId ?? null
+
+  while (current !== null && entryById.has(current)) {
+    path.unshift(current)
+    current = entryById.get(current)!.parentId
+  }
+
+  return path
+}
+
+/**
+ * Convert a list of entry IDs (ordered root → leaf) into TreeEntryNode[]
+ * by enriching each entry from its raw JSONL data.
+ */
+function buildTreeNodes(entryIds: string[], entryById: Map<string, SessionEntry>): TreeEntryNode[] {
+  return entryIds.map((id) => {
+    const entry = entryById.get(id)
+    if (!entry) {
+      return { id, parentId: null, type: 'message', timestamp: '' }
+    }
+    return entryToTreeNode(entry)
+  })
+}
+
+/**
+ * Convert a raw SessionEntry into a TreeEntryNode with type-specific enrichment.
+ */
+function entryToTreeNode(entry: SessionEntry): TreeEntryNode {
+  // Map Pi entry types to TreeEntryType — both 'custom' and 'custom_message'
+  // appear in the tree structurally but we show them as 'message' since
+  // they're extension-injected context messages.
+  const rawType = entry.type as string
+  const displayType: TreeEntryType =
+    rawType === 'custom' || rawType === 'custom_message' ? 'message' : (rawType as TreeEntryType)
+
+  const base: TreeEntryNode = {
+    id: entry.id,
+    parentId: entry.parentId,
+    type: displayType,
+    timestamp: entry.timestamp,
+  }
+
+  const raw = entry as Record<string, unknown>
+
+  switch (entry.type) {
+    case 'message': {
+      const msg = (raw.message ?? {}) as Record<string, unknown>
+      base.role = (msg.role as 'user' | 'assistant') ?? undefined
+      base.contentPreview = truncate(contentToText(msg.content), 80)
+      break
+    }
+    case 'compaction': {
+      const result = raw.result as Record<string, unknown> | undefined
+      base.tokensBefore = typeof result?.tokensBefore === 'number' ? result.tokensBefore : undefined
+      base.compactionReason = (raw.reason as string) ?? undefined
+      base.summary = (result?.summary as string) ?? undefined
+      break
+    }
+    case 'label': {
+      base.targetId = (raw.targetId as string) ?? undefined
+      const label = raw.label
+      base.summary = typeof label === 'string' ? label : undefined
+      break
+    }
+    case 'branch_summary': {
+      base.summary = (raw.summary as string) ?? undefined
+      break
+    }
+    case 'model_change': {
+      base.modelId = (raw.modelId as string) ?? undefined
+      base.summary = base.modelId
+      break
+    }
+    case 'session_info': {
+      base.name = (raw.name as string) ?? undefined
+      base.summary = base.name
+      break
+    }
+    case 'thinking_level_change': {
+      const level = raw.thinkingLevel as string | undefined
+      base.summary = level ? `Thinking level: ${level}` : 'Thinking level changed'
+      break
+    }
+  }
+
+  return base
 }
 
 function contentToText(content: unknown): string {

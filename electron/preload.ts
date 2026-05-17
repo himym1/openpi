@@ -46,6 +46,7 @@ import type {
   SessionListOptions,
   SessionReady,
   SessionStats,
+  SessionTreeResponse,
   SetModel,
   SettingsResult,
   SkillItem,
@@ -104,6 +105,9 @@ const api = {
     options?: { limit?: number; beforeEntryId?: string }
   ): Promise<SessionHistoryPage> =>
     ipcRenderer.invoke(IPC.GET_SESSION_MESSAGES, { path, ...options }),
+
+  getSessionTree: (path: string): Promise<SessionTreeResponse> =>
+    ipcRenderer.invoke(IPC.GET_SESSION_TREE, { path }),
 
   openSession: (payload: OpenSession): Promise<void> =>
     ipcRenderer.invoke(IPC.OPEN_SESSION, payload),

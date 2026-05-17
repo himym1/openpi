@@ -115,6 +115,8 @@ type ConversationPaneProps = {
   hasMoreHistoryBefore?: boolean
   isLoadingOlderHistory?: boolean
   onLoadOlderHistory?: () => void
+  /** Set to a message/entry id to scroll the conversation to that message. */
+  scrollToMessageId?: string | null
 }
 
 export const ConversationPane: Component<ConversationPaneProps> = (props) => {
@@ -186,6 +188,29 @@ export const ConversationPane: Component<ConversationPaneProps> = (props) => {
   // agent responds the view snaps back so they see the answer arrive.
   createEffect(() => {
     if (props.isStreaming) setIsAtBottom(true)
+  })
+
+  // ── Scroll to a specific message by ID (triggered from tree view) ────
+  createEffect(() => {
+    const rawTarget = props.scrollToMessageId
+    if (!rawTarget || !listRef) return
+
+    // Extract the real entry ID (strip nonce suffix added by App.tsx)
+    const targetId = rawTarget.includes(':') ? rawTarget.split(':')[0] : rawTarget
+
+    // Search for the target ID in items
+    const index = items.findIndex((item) => {
+      if (item.kind === 'assistant-group') {
+        return item.id === targetId || item.messages.some((m) => m.id === targetId)
+      }
+      return item.message.id === targetId
+    })
+
+    if (index >= 0) {
+      setIsAtBottom(false)
+      setShowScrollBtn(false)
+      listRef.scrollToIndex(index, { align: 'start', smooth: true })
+    }
   })
 
   const scrollToBottom = () => {

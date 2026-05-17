@@ -5,6 +5,7 @@ import {
   Folder,
   FolderTree,
   GitBranch,
+  GitFork,
   MessageSquareText,
   SquareTerminal,
 } from 'lucide-solid'
@@ -12,7 +13,7 @@ import { createSignal, Show } from 'solid-js'
 import type { AppUpdateStatus } from '../lib/ipc'
 import { ChangelogModal } from './ChangelogModal'
 
-export type LeftDrawerMode = 'threads' | 'workspace' | 'stories'
+export type LeftDrawerMode = 'threads' | 'workspace' | 'stories' | 'tree'
 
 const HOMEBREW_UPGRADE_COMMAND = 'brew update && brew upgrade --cask openpi'
 
@@ -22,6 +23,7 @@ type BottomBarProps = {
   onToggleThreads: () => void
   onToggleWorkspace: () => void
   onToggleStories: () => void
+  onToggleTree: () => void
   gitPanelOpen: boolean
   onToggleGitPanel: () => void
   filePanelOpen: boolean
@@ -99,6 +101,16 @@ export function BottomBar(props: BottomBarProps) {
             aria-pressed={props.leftDrawerOpen && props.leftDrawerMode === 'stories'}
           >
             <BookOpen size={13} />
+          </button>
+          <button
+            type="button"
+            class={`bottom-bar-btn${props.leftDrawerOpen && props.leftDrawerMode === 'tree' ? ' is-active' : ''}`}
+            onClick={props.onToggleTree}
+            title="Show session map"
+            aria-label="Show session map"
+            aria-pressed={props.leftDrawerOpen && props.leftDrawerMode === 'tree'}
+          >
+            <GitFork size={13} />
           </button>
           <button
             type="button"

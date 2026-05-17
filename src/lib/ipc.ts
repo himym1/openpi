@@ -35,6 +35,7 @@ export const IPC = {
   REMOVE_PACKAGE: 'openpi:remove-package',
   SET_SESSION_NAME: 'openpi:set-session-name',
   FORK_SESSION: 'openpi:fork-session',
+  GET_SESSION_TREE: 'openpi:get-session-tree',
 
   // PTY terminal (renderer → main)
   PTY_CREATE: 'openpi:pty-create',
@@ -573,6 +574,74 @@ export const forkSessionSchema = z.object({
   entryId: z.string().min(1),
 })
 export type ForkSession = z.infer<typeof forkSessionSchema>
+
+// ─── Session tree ────────────────────────────────────────────────────────────
+
+export const TREE_ENTRY_TYPES = [
+  'message',
+  'compaction',
+  'branch_summary',
+  'label',
+  'model_change',
+  'session_info',
+  'thinking_level_change',
+] as const
+export type TreeEntryType = (typeof TREE_ENTRY_TYPES)[number]
+
+/** A single node in the session tree — maps to one JSONL entry (minus session header). */
+export const treeEntryNodeSchema = z.object({
+  id: z.string(),
+  parentId: z.string().nullable(),
+  type: z.enum(TREE_ENTRY_TYPES),
+  timestamp: z.string(),
+  /** Human-readable one-line summary for display in the tree view. */
+  summary: z.string().optional(),
+  /** Compaction: tokens freed. */
+  tokensBefore: z.number().optional(),
+  /** Compaction: why it triggered. */
+  compactionReason: z.string().optional(),
+  /** Label: the entry this label is attached to. */
+  targetId: z.string().optional(),
+  /** Message: user/assistant. */
+  role: z.enum(['user', 'assistant']).optional(),
+  /** Message: first ~80 chars of content. */
+  contentPreview: z.string().optional(),
+  /** Model change: the model id. */
+  modelId: z.string().optional(),
+  /** Session info: display name. */
+  name: z.string().optional(),
+})
+export type TreeEntryNode = z.infer<typeof treeEntryNodeSchema>
+
+/** Metadata about a branching point in the session tree. */
+export const forkPointSchema = z.object({
+  entryId: z.string(),
+  /** Leaf IDs of all child branches from this fork point. */
+  childLeaves: z.array(z.string()),
+  branchCount: z.number().int(),
+})
+export type ForkPoint = z.infer<typeof forkPointSchema>
+
+/** One branch = a linear path from root entry to a leaf entry. */
+export const branchSchema = z.object({
+  leafId: z.string(),
+  /** Entries ordered from root to leaf. */
+  nodes: z.array(treeEntryNodeSchema),
+})
+export type Branch = z.infer<typeof branchSchema>
+
+export const sessionTreeRequestSchema = z.object({
+  path: z.string().min(1),
+})
+export type SessionTreeRequest = z.infer<typeof sessionTreeRequestSchema>
+
+export const sessionTreeResponseSchema = z.object({
+  sessionPath: z.string(),
+  branches: z.array(branchSchema),
+  forkPoints: z.array(forkPointSchema),
+  activeLeafId: z.string().nullable(),
+})
+export type SessionTreeResponse = z.infer<typeof sessionTreeResponseSchema>
 
 // ─── PTY schemas ────────────────────────────────────────────────────────────
 

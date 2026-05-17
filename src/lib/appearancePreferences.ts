@@ -33,10 +33,8 @@ const UI_FONT_FALLBACKS = [
   '"abcNormal"',
   '"abcNormal Fallback"',
   'Inter',
-  'ui-sans-serif',
-  'system-ui',
-  '-apple-system',
-  'BlinkMacSystemFont',
+  '"Helvetica Neue"',
+  'Arial',
   '"Segoe UI"',
   'sans-serif',
 ]
@@ -80,6 +78,10 @@ export function sanitizeFontPreference(value: string | null): string {
     .split(',')
     .map((part) => part.trim().replace(/^['"]|['"]$/g, ''))
     .filter((part) => /^[\w\s.\-+]+$/.test(part))
+    .filter((part) => !part.startsWith('.'))
+    .filter((part) => !/^SF (Pro|Compact)\b/i.test(part))
+    .filter((part) => !/^San Francisco\b/i.test(part))
+    .filter((part) => !['system-ui', '-apple-system', 'BlinkMacSystemFont'].includes(part))
     .slice(0, 4)
     .join(', ')
     .slice(0, 160)

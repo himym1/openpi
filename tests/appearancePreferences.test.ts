@@ -13,8 +13,21 @@ describe('appearance preferences', () => {
     )
   })
 
-  it('prepends custom UI font to the default UI stack', () => {
-    expect(buildUiFontStack('SF Pro Text')).toMatch(/^"SF Pro Text", "abcNormal"/)
+  it('rejects private macOS system font names and system font aliases', () => {
+    expect(
+      sanitizeFontPreference(
+        '.SFNS-Regular, SF Pro Text, San Francisco, system-ui, -apple-system, BlinkMacSystemFont, Inter'
+      )
+    ).toBe('Inter')
+  })
+
+  it('builds the UI stack without macOS private system aliases', () => {
+    const stack = buildUiFontStack('IBM Plex Sans')
+
+    expect(stack).toMatch(/^"IBM Plex Sans", "abcNormal"/)
+    expect(stack).not.toContain('system-ui')
+    expect(stack).not.toContain('-apple-system')
+    expect(stack).not.toContain('BlinkMacSystemFont')
   })
 
   it('prepends custom code font to the code stack and keeps mono fallbacks', () => {

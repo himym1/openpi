@@ -8,7 +8,7 @@
  *   - Early return pattern → <Show when={session.ready}> control flow
  *   - className  → class in SolidJS JSX
  */
-import { batch, createMemo, createSignal, onMount, Show } from 'solid-js'
+import { batch, createEffect, createMemo, createSignal, on, onMount, Show } from 'solid-js'
 import { AskWidget } from './components/AskWidget'
 import { BottomBar, type LeftDrawerMode } from './components/BottomBar'
 import { CommandPalette, type PaletteCommand } from './components/CommandPalette'
@@ -28,6 +28,7 @@ import { ResizeHandle } from './components/ResizeHandle'
 import { SubagentWidget } from './components/SubagentWidget'
 import { ArchiveConfirmModal } from './components/sidebar/ArchiveConfirmModal'
 import { SessionSidebar } from './components/sidebar/SessionSidebar'
+import { SessionTreePanel } from './components/sidebar/SessionTreePanel'
 import { StoryBrowser } from './components/sidebar/StoryBrowser'
 import { WorkspacePane } from './components/sidebar/WorkspacePane'
 import { TaskWidget } from './components/TaskWidget'
@@ -83,6 +84,10 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = createSignal(true)
   const [leftDrawerMode, setLeftDrawerMode] = createSignal<LeftDrawerMode>('threads')
   const [gitPanelOpen, setGitPanelOpen] = createSignal(false)
+  const [scrollToMessageId, setScrollToMessageId] = createSignal<string | null>(null)
+  let scrollToMessageNonce = 0
+  const [treeRefreshVersion, setTreeRefreshVersion] = createSignal(0)
+  let prevStreaming = false
 
   const toggleLeftDrawerMode = (mode: LeftDrawerMode) => {
     if (sidebarOpen() && leftDrawerMode() === mode) {
@@ -92,7 +97,21 @@ export default function App() {
     setLeftDrawerMode(mode)
     setSidebarOpen(true)
   }
+  // Bump treeRefreshVersion when agent finishes a turn so SessionTreePanel re-fetches
+  createEffect(
+    on(
+      () => session.isStreaming,
+      (streaming) => {
+        if (prevStreaming && !streaming) {
+          setTreeRefreshVersion((v) => v + 1)
+        }
+        prevStreaming = streaming
+      }
+    )
+  )
+
   const onToggleStories = () => toggleLeftDrawerMode('stories')
+  const onToggleTree = () => toggleLeftDrawerMode('tree')
 
   // ── Git panel side (left or right of main pane) ───────────────────────────
   // Sessions sidebar is always fixed on the left and is not draggable.
@@ -760,6 +779,16 @@ export default function App() {
                 <Show when={leftDrawerMode() === 'stories'}>
                   <StoryBrowser cwd={cwd()} onOpenFile={(relPath) => openFile(relPath)} />
                 </Show>
+                <Show when={leftDrawerMode() === 'tree'}>
+                  <SessionTreePanel
+                    sessionPath={activeSessionPath()}
+                    onScrollToMessage={(entryId) => {
+                      scrollToMessageNonce++
+                      setScrollToMessageId(`${entryId}:${scrollToMessageNonce.toString(36)}`)
+                    }}
+                    refreshTrigger={treeRefreshVersion()}
+                  />
+                </Show>
                 <Show when={leftDrawerMode() === 'threads'}>
                   <SessionSidebar
                     style={{ width: `${sidebarWidth()}px` }}
@@ -867,6 +896,7 @@ export default function App() {
                       hasMoreHistoryBefore={session.hasMoreHistoryBefore}
                       isLoadingOlderHistory={session.isLoadingOlderHistory}
                       onLoadOlderHistory={session.loadOlderSessionMessages}
+                      scrollToMessageId={scrollToMessageId()}
                     />
 
                     {/* Extension widgets — anchored to composer width, animate in from below */}
@@ -1038,6 +1068,7 @@ export default function App() {
               onToggleThreads={() => toggleLeftDrawerMode('threads')}
               onToggleWorkspace={() => toggleLeftDrawerMode('workspace')}
               onToggleStories={onToggleStories}
+              onToggleTree={onToggleTree}
               gitPanelOpen={gitPanelOpen()}
               onToggleGitPanel={() => setGitPanelOpen((prev) => !prev)}
               filePanelOpen={filePanelOpen()}

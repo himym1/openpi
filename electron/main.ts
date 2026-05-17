@@ -39,6 +39,7 @@ import type {
   SessionListItem,
   SessionReady,
   SessionStats,
+  SessionTreeResponse,
   SettingsResult,
   SkillItem,
   WorkspaceInfo,
@@ -101,6 +102,7 @@ import {
   sessionListOptionsSchema,
   sessionMessagesRequestSchema,
   sessionPromptSchema,
+  sessionTreeRequestSchema,
   setExtensionEnabledRequestSchema,
   setModelSchema,
   setPrefSchema,
@@ -1117,6 +1119,21 @@ function registerHandlers(): void {
           hasMoreBefore: false,
           nextBeforeEntryId: null,
           limit: limit ?? 0,
+        }
+      )
+    }
+  )
+
+  ipcMain.handle(
+    IPC.GET_SESSION_TREE,
+    async (_event, raw: unknown): Promise<SessionTreeResponse> => {
+      const { path: sessionPath } = sessionTreeRequestSchema.parse(raw)
+      return (
+        sessionIndex?.getSessionTree(sessionPath) ?? {
+          sessionPath,
+          branches: [],
+          forkPoints: [],
+          activeLeafId: null,
         }
       )
     }
