@@ -4386,11 +4386,11 @@ body.panel-dragging {
   margin: 0 0 28px;
   text-align: left;
 }
-.welcome-onboarding-intro {
+.welcome-onboarding .welcome-onboarding-intro {
   font-size: 13px;
   line-height: 1.55;
   color: var(--graphite);
-  margin-bottom: 20px !important;
+  margin-bottom: 20px;
 }
 .welcome-onboarding-steps {
   display: flex;
