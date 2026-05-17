@@ -816,7 +816,7 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
   const [mode, setMode] = createSignal<ViewMode>('edit')
   const [saving, setSaving] = createSignal(false)
   const [saveStatus, setSaveStatus] = createSignal<'idle' | 'saved' | 'error'>('idle')
-  const [formatLoading, setFormatLoading] = createSignal(false)
+
   const [formatOnSave, setFormatOnSave] = createSignal(false)
   const [wordWrap, setWordWrap] = createSignal(false)
   const [saveError, setSaveError] = createSignal<string | null>(null)
@@ -1095,7 +1095,7 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
   /** Run Biome format on the current file (does not save). */
   const handleFormat = async () => {
     if (isImage() || content() === null) return
-    setFormatLoading(true)
+
     try {
       const formatted = await window.openpi.formatFile(normalizedPath())
       setEditBuffer(formatted)
@@ -1104,7 +1104,6 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
       setSaveStatus('error')
       setSaveError(err instanceof Error ? err.message : String(err))
     } finally {
-      setFormatLoading(false)
     }
   }
 

@@ -1541,7 +1541,7 @@ function registerHandlers(): void {
     if (full !== state.cwd && !full.startsWith(state.cwd + sep)) {
       throw new Error('Refusing to format outside workspace')
     }
-    const { execSync } = await import('child_process')
+    const { execSync } = await import('node:child_process')
     try {
       execSync(`npx biome format --write "${full}"`, {
         cwd: state.cwd,
