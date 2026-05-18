@@ -83,6 +83,11 @@ export class PiSidecarHost {
     this.onCrash = opts.onCrash
   }
 
+  /** PID of the sidecar child process, or undefined before spawn. */
+  get workerPid(): number | undefined {
+    return this.child?.pid
+  }
+
   start(): void {
     this.stopping = false
     this.restartCount = 0
@@ -91,14 +96,18 @@ export class PiSidecarHost {
 
   private spawnChild(): void {
     const nodeExecutable = findNodeExecutable()
+    // Let the openpi-bridge extension identify itself as OpenPi
+    const bridgeEnv = { ...process.env, OPENPI_BRIDGE_APP: 'openpi' }
     const child: SidecarProcess = nodeExecutable
       ? fork(SIDECAR_PATH, [], {
           execPath: nodeExecutable,
           stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+          env: bridgeEnv,
         })
       : utilityProcess.fork(SIDECAR_PATH, [], {
           serviceName: SIDECAR_SERVICE_NAME,
           stdio: 'pipe',
+          env: bridgeEnv,
         })
 
     child.stdout?.on('data', (chunk: Buffer) => {
