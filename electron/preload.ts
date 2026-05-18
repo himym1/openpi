@@ -42,6 +42,7 @@ import type {
   ProviderLoginEvent,
   PtyData,
   PtyExit,
+  RemoteSessionUpdate,
   SessionError,
   SessionEvent,
   SessionHistoryPage,
@@ -387,6 +388,42 @@ const api = {
     const handler = () => cb()
     ipcRenderer.on(IPC.SESSION_INDEX_UPDATED, handler)
     return () => ipcRenderer.removeListener(IPC.SESSION_INDEX_UPDATED, handler)
+  },
+
+  onRemoteSessionStatus: (
+    cb: (payload: {
+      app: string
+      status: string
+      pid: number
+      workspace?: string
+      sessionFile?: string | null
+    }) => void
+  ) => {
+    const handler = (
+      _: Electron.IpcRendererEvent,
+      payload: {
+        app: string
+        status: string
+        pid: number
+        workspace?: string
+        sessionFile?: string | null
+      }
+    ) => cb(payload)
+    ipcRenderer.on(IPC.REMOTE_SESSION_STATUS, handler)
+    return () => ipcRenderer.removeListener(IPC.REMOTE_SESSION_STATUS, handler)
+  },
+
+  onRemoteSessionUpdate: (cb: (payload: RemoteSessionUpdate) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, payload: RemoteSessionUpdate) => cb(payload)
+    ipcRenderer.on(IPC.REMOTE_SESSION_UPDATE, handler)
+    return () => ipcRenderer.removeListener(IPC.REMOTE_SESSION_UPDATE, handler)
+  },
+
+  onGoalUpdate: (cb: (payload: import('../src/lib/ipc').GoalUpdate) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, payload: import('../src/lib/ipc').GoalUpdate) =>
+      cb(payload)
+    ipcRenderer.on(IPC.GOAL_UPDATE, handler)
+    return () => ipcRenderer.removeListener(IPC.GOAL_UPDATE, handler)
   },
 } as const
 

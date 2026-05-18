@@ -27,15 +27,7 @@ import type { ToolCard } from '../../types/session'
 const SHELL_TOOLS = new Set(['bash', 'sh', 'computer_bash', 'run_command'])
 const EDIT_TOOLS = new Set(['edit', 'multiedit', 'write', 'patch', 'apply_patch'])
 const FILE_TOOLS = new Set(['read'])
-const HARNESS_TOOLS = new Set([
-  'harness_status',
-  'harness_intake',
-  'harness_init',
-  'harness_lint',
-  'story_create',
-  'decision_record',
-  'test_matrix_update',
-])
+const HARNESS_TOOLS = new Set<string>()
 const SPEC_TOOLS = new Set([
   'spec_create',
   'spec_next_phase',
@@ -87,20 +79,6 @@ function ToolIcon(props: ToolIconProps) {
     case 'TaskOutput':
     case 'TaskStop':
       return <ListChecks {...ICON_PROPS} />
-    case 'harness_status':
-      return <Info {...ICON_PROPS} />
-    case 'harness_intake':
-      return <Search {...ICON_PROPS} />
-    case 'harness_init':
-      return <FileText {...ICON_PROPS} />
-    case 'harness_lint':
-      return <ListChecks {...ICON_PROPS} />
-    case 'story_create':
-      return <FileText {...ICON_PROPS} />
-    case 'decision_record':
-      return <Info {...ICON_PROPS} />
-    case 'test_matrix_update':
-      return <RefreshCw {...ICON_PROPS} />
     case 'spec_create':
       return <FileText {...ICON_PROPS} />
     case 'spec_next_phase':
@@ -189,32 +167,7 @@ function extractCommand(card: ToolCard): string {
   // steer_subagent: show agent id
   if (card.toolName === 'steer_subagent' && typeof card.args.agent_id === 'string')
     return `#${card.args.agent_id}`
-  // Harness tools: richer preview per type
-  if (HARNESS_TOOLS.has(card.toolName)) {
-    const focus = typeof card.args.focus === 'string' ? card.args.focus : ''
-    const intent = typeof card.args.intent === 'string' ? card.args.intent : ''
-    const title = typeof card.args.title === 'string' ? card.args.title : ''
-    const area = typeof card.args.area === 'string' ? card.args.area : ''
-    const behavior = typeof card.args.behavior === 'string' ? card.args.behavior : ''
-    switch (card.toolName) {
-      case 'harness_status':
-        return focus ? `status: ${focus}` : 'status'
-      case 'harness_intake':
-        return intent || 'intake'
-      case 'harness_init':
-        return card.args.overwrite === true ? 'init · overwrite' : 'init missing docs'
-      case 'harness_lint':
-        return 'lint'
-      case 'story_create':
-        return title || 'new story'
-      case 'decision_record':
-        return title || 'new decision'
-      case 'test_matrix_update':
-        return area && behavior ? `${area} · ${behavior}` : area || behavior || 'matrix update'
-      default:
-        return card.toolName
-    }
-  }
+  // Goal/plan tools: show tool name
   // Legacy spec tools: richer preview per type
   if (card.toolName.startsWith('spec_')) {
     const name = typeof card.args.name === 'string' ? card.args.name : ''
@@ -610,20 +563,14 @@ const GenericToolRow: Component<GenericToolRowProps> = (props) => {
 
 function harnessActionForTool(name: string): string {
   switch (name) {
-    case 'harness_status':
-      return 'status'
-    case 'harness_intake':
-      return 'intake'
-    case 'harness_init':
-      return 'init'
-    case 'harness_lint':
-      return 'lint'
-    case 'story_create':
-      return 'story'
-    case 'decision_record':
-      return 'decision'
-    case 'test_matrix_update':
-      return 'test-matrix'
+    case 'get_goal':
+      return 'get_goal'
+    case 'create_goal':
+      return 'create_goal'
+    case 'update_goal':
+      return 'update_goal'
+    case 'update_plan':
+      return 'update_plan'
     case 'spec_create':
       return 'legacy-create'
     case 'spec_next_phase':
@@ -643,117 +590,10 @@ function harnessActionForTool(name: string): string {
   }
 }
 
-function parseHarnessTypeBadge(card: ToolCard): string | null {
-  const t = card.args.type
-  if (t === 'feature' || t === 'bugfix') return t
-  return null
-}
-
-function parseHarnessWorkflowBadge(card: ToolCard): string | null {
-  const w = card.args.workflow
-  if (w === 'requirements-first' || w === 'design-first' || w === 'quick-plan') return w
-  return null
-}
-
-function parseHarnessOutputSummary(toolName: string, output: string): string | null {
+function parseGoalOutputSummary(_toolName: string, output: string): string | null {
   if (!output) return null
-
-  switch (toolName) {
-    case 'harness_status': {
-      const docMatch = output.match(/Required docs:\s*(\d+\/\d+)/i)
-      const legacyMatch = output.match(/Legacy specs:\s*(\d+)/i)
-      const parts: string[] = []
-      if (docMatch) parts.push(`${docMatch[1]} docs`)
-      if (legacyMatch) parts.push(`${legacyMatch[1]} legacy`)
-      return parts.length ? parts.join(' · ') : null
-    }
-    case 'harness_intake': {
-      const classMatch = output.match(/Classification:\s*([^\n]+)/i)
-      const riskMatch = output.match(/Risk:\s*([^\n]+)/i)
-      return [classMatch?.[1]?.trim(), riskMatch?.[1]?.trim()].filter(Boolean).join(' · ') || null
-    }
-    case 'harness_init': {
-      const created = (output.match(/- created:/g) ?? []).length
-      const kept = (output.match(/- kept:/g) ?? []).length
-      const overwritten = (output.match(/- overwritten:/g) ?? []).length
-      const parts: string[] = []
-      if (created) parts.push(`${created} created`)
-      if (kept) parts.push(`${kept} kept`)
-      if (overwritten) parts.push(`${overwritten} overwritten`)
-      return parts.length ? parts.join(' · ') : null
-    }
-    case 'harness_lint': {
-      const issues = output.match(/Issues:\s*(\d+)/i)?.[1]
-      const warnings = output.match(/Warnings:\s*(\d+)/i)?.[1]
-      return issues || warnings ? `${issues ?? 0} issues · ${warnings ?? 0} warnings` : null
-    }
-    case 'story_create': {
-      const criteria = output.match(/Acceptance criteria:\s*(\d+)/i)?.[1]
-      if (/already exists/i.test(output)) return 'already exists'
-      return criteria ? `${criteria} criteria` : null
-    }
-    case 'decision_record': {
-      const status = output.match(/Status:\s*([^\n]+)/i)?.[1]
-      if (/already exists/i.test(output)) return 'already exists'
-      return status ? status.trim() : null
-    }
-    case 'test_matrix_update': {
-      const status = output.match(/Status:\s*([^\n]+)/i)?.[1]
-      return status ? status.trim() : 'row appended'
-    }
-    case 'spec_next_phase': {
-      const phaseMatch = output.match(
-        /(requirements|design|tasks)\s*(→|->|to)\s*(requirements|design|tasks)/i
-      )
-      if (phaseMatch) return `${phaseMatch[1]} → ${phaseMatch[3]}`
-      if (/completed|generated/i.test(output)) return 'completed'
-      return null
-    }
-    case 'spec_run_task': {
-      if (/completed/i.test(output)) return 'done'
-      if (/blocked/i.test(output)) return 'blocked'
-      if (/failed/i.test(output)) return 'failed'
-      return null
-    }
-    case 'spec_run_all': {
-      const tasksMatch = output.match(/(\d+)\s*tasks?/i)
-      const wavesMatch = output.match(/(\d+)\s*waves?/i)
-      const parts: string[] = []
-      if (tasksMatch) parts.push(`${tasksMatch[1]} tasks`)
-      if (wavesMatch) parts.push(`wave ${wavesMatch[1]}`)
-      if (!parts.length && /completed|finished/i.test(output)) return 'completed'
-      return parts.length ? parts.join(', ') : null
-    }
-    case 'spec_status': {
-      const lines = output
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
-      const statusLine = lines.find(
-        (l) => /phase/i.test(l) || (/\d+\/\d+/.test(l) && /task/i.test(l)) || /complete/i.test(l)
-      )
-      return statusLine || null
-    }
-    case 'spec_analyze': {
-      const parts: string[] = []
-      const ambigMatch = output.match(/(\d+)\s*ambiguities?/i)
-      const gapMatch = output.match(/(\d+)\s*gaps?/i)
-      const inconsistencyMatch = output.match(/(\d+)\s*inconsistenc/i)
-      if (ambigMatch) parts.push(`${ambigMatch[1]} ambiguities`)
-      if (gapMatch) parts.push(`${gapMatch[1]} gaps`)
-      if (inconsistencyMatch) parts.push(`${inconsistencyMatch[1]} inconsistencies`)
-      if (!parts.length && /no issues|looks good|clean/i.test(output)) return 'no issues found'
-      return parts.length ? parts.join(' · ') : null
-    }
-    case 'spec_sync_tasks': {
-      const match = output.match(/(\d+)\s*tasks?\s*(matched|complete|found|sync)/i)
-      if (match) return `${match[1]} tasks matched`
-      if (/no tasks?/i.test(output)) return 'no tasks to sync'
-      return null
-    }
-    default:
-      return null
-  }
+  const first = output.split('\n').find((l) => l.trim()) ?? ''
+  return first.length > 60 ? `${first.slice(0, 57)}...` : first
 }
 
 function parseHarnessTaskId(card: ToolCard): string | null {
@@ -780,11 +620,10 @@ const HarnessToolRow: Component<HarnessToolRowProps> = (props) => {
     return ''
   }
   const isLegacySpec = () => props.card.toolName.startsWith('spec_')
-  const typeBadge = () => parseHarnessTypeBadge(props.card)
-  const workflowBadge = () => parseHarnessWorkflowBadge(props.card)
+  const typeBadge = () => null
+  const workflowBadge = () => null
   const taskId = () => parseHarnessTaskId(props.card)
-  const outputSummary = () =>
-    parseHarnessOutputSummary(props.card.toolName, props.card.output ?? '')
+  const outputSummary = () => parseGoalOutputSummary(props.card.toolName, props.card.output ?? '')
   const label = () => harnessActionForTool(props.card.toolName)
 
   return (

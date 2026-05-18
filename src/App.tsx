@@ -703,12 +703,38 @@ export default function App() {
             .map((message) => message.text)
             .reverse()
         )
+        const remotePreemptedByLocal = createMemo(
+          () =>
+            session.localActivityAt > 0 && session.remoteSessionUpdatedAt <= session.localActivityAt
+        )
+        const showingRemoteSession = createMemo(() =>
+          Boolean(
+            !session.isStreaming &&
+              !remotePreemptedByLocal() &&
+              session.remoteSessionStatus?.sessionFile &&
+              session.remoteSessionMessages.length > 0
+          )
+        )
+        const conversationMessages = createMemo(() =>
+          showingRemoteSession() ? session.remoteSessionMessages : session.messages
+        )
+        const conversationStreaming = createMemo(
+          () =>
+            session.isStreaming ||
+            (!remotePreemptedByLocal() && session.remoteSessionStatus?.status === 'running')
+        )
+        const showRemoteSessionBar = createMemo(() =>
+          Boolean(
+            !remotePreemptedByLocal() &&
+              (session.remoteSessionStatus?.status === 'running' || showingRemoteSession())
+          )
+        )
 
         const visibleModels = () =>
           session.models.filter((m) => !hiddenModels().has(`${m.provider}/${m.id}`))
 
         return (
-          <div class={`app-shell${session.isStreaming ? ' agent-streaming' : ''}`}>
+          <div class={`app-shell${conversationStreaming() ? ' agent-streaming' : ''}`}>
             {/* RefsPickerPanel: always mounted so TopBar branch click works
                 even when the git panel is closed */}
             <RefsPickerPanel
@@ -906,7 +932,7 @@ export default function App() {
                   {/* Conversation side — always mounted */}
                   <div class="main-panel-conversation">
                     <ConversationPane
-                      messages={session.messages}
+                      messages={conversationMessages()}
                       workspaceName={workspaceName()}
                       workspaceSummary={session.workspaceSummary}
                       activeSessionPath={activeSessionPath()}
@@ -915,7 +941,7 @@ export default function App() {
                       onFileClick={(path) => openFile(path)}
                       onOpenWorkspace={session.openWorkspace}
                       displayPreferences={displayPreferences()}
-                      isStreaming={session.isStreaming}
+                      isStreaming={conversationStreaming()}
                       hasMoreHistoryBefore={session.hasMoreHistoryBefore}
                       isLoadingOlderHistory={session.isLoadingOlderHistory}
                       onLoadOlderHistory={session.loadOlderSessionMessages}
@@ -936,6 +962,23 @@ export default function App() {
                         )}
                       </Show>
                     </div>
+
+                    <Show when={showRemoteSessionBar()}>
+                      <div class="remote-session-bar">
+                        <span class="remote-session-bar-dot" />
+                        {session.remoteSessionStatus?.status === 'running'
+                          ? 'Agent running in '
+                          : 'Mirroring session from '}
+                        <strong>
+                          {session.remoteSessionStatus?.app === 'pi-tui'
+                            ? 'Pi TUI'
+                            : (session.remoteSessionStatus?.app ?? 'another instance')}
+                        </strong>
+                        <Show when={Boolean(session.remoteSessionStatus?.workspace)}>
+                          <span> — {session.remoteSessionStatus!.workspace!}</span>
+                        </Show>
+                      </div>
+                    </Show>
 
                     <Show when={session.error}>
                       {(getErr) => (
@@ -989,6 +1032,7 @@ export default function App() {
                       activeGoalStep={session.activeGoalStep}
                       onSetActiveGoal={session.setActiveGoal}
                       contextPercent={session.contextPercent}
+                      agentTps={session.agentRunMetrics?.tps ?? null}
                     />
                   </div>
 
@@ -1122,6 +1166,7 @@ export default function App() {
               isStreaming={session.isStreaming}
               gitSyncAction={gitSyncAction()}
               gitSyncMessage={gitSyncMessage()}
+              goalUpdate={session.goalUpdate}
             />
 
             <Show when={fileSearchOpen()}>

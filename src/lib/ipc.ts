@@ -124,6 +124,9 @@ export const IPC = {
   GET_OUTPUT_BUFFER: 'openpi:get-output-buffer',
   GIT_STATUS_CHANGED: 'openpi:git-status-changed',
   FILE_TREE_CHANGED: 'openpi:file-tree-changed',
+  REMOTE_SESSION_STATUS: 'openpi:remote-session-status',
+  REMOTE_SESSION_UPDATE: 'openpi:remote-session-update',
+  GOAL_UPDATE: 'openpi:goal-update',
 } as const
 
 // ─── Invoke payloads ────────────────────────────────────────────────────────
@@ -432,6 +435,22 @@ export const sessionHistoryPageSchema = z.object({
   limit: z.number(),
 })
 export type SessionHistoryPage = z.infer<typeof sessionHistoryPageSchema>
+
+export const remoteSessionUpdateSchema = sessionHistoryPageSchema.extend({
+  sessionFile: z.string(),
+  updatedAt: z.number(),
+})
+export type RemoteSessionUpdate = z.infer<typeof remoteSessionUpdateSchema>
+
+export const goalUpdateSchema = z.object({
+  objective: z.string().nullable(),
+  status: z.string().nullable(),
+  tokensUsed: z.number(),
+  tokenBudget: z.number().nullable(),
+  timeUsedSeconds: z.number(),
+  timestamp: z.number(),
+})
+export type GoalUpdate = z.infer<typeof goalUpdateSchema>
 
 // ─── Provider info ───────────────────────────────────────────────────────────
 

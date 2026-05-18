@@ -41,7 +41,6 @@ heading "Harness docs"
 
 REQUIRED_DOCS=(
   "docs/HARNESS.md"
-  "docs/FEATURE_INTAKE.md"
   "docs/TEST_MATRIX.md"
 )
 
@@ -61,10 +60,8 @@ $ALL_REQUIRED_EXIST && pass "All required harness docs present"
 heading "Optional harness directories"
 
 OPTIONAL_DIRS=(
-  "docs/product"
   "docs/stories"
   "docs/decisions"
-  "docs/templates"
 )
 
 for dir in "${OPTIONAL_DIRS[@]}"; do

@@ -730,6 +730,50 @@ input::placeholder {
   color: var(--accent);
 }
 
+/* ── Goal status indicator ────────────────────────────────────────────── */
+.bottom-bar-goal {
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  color: var(--accent);
+}
+.bottom-bar-goal.status-paused {
+  color: var(--graphite);
+}
+.bottom-bar-goal.status-budget_limited {
+  color: var(--warning);
+}
+.bottom-bar-goal.status-complete {
+  color: var(--success, #22c55e);
+}
+
+.goal-indicator-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.goal-indicator-dot.active {
+  background: var(--accent);
+}
+.goal-indicator-dot.paused {
+  background: var(--graphite);
+}
+.goal-indicator-dot.budget_limited {
+  background: var(--warning);
+}
+.goal-indicator-dot.complete {
+  background: var(--success, #22c55e);
+}
+
 /* ── Git panel border direction ────────────────────────────────────────── */
 /* Right of main (default): border-left separates from center-col. */
 /* Left of main: border-right separates from center-col; left is free. */
@@ -4485,6 +4529,19 @@ body.panel-dragging {
   color: inherit;
 }
 
+.composer-tps-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  color: var(--mute);
+  font-size: 11px;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
 /* Pulse animation when context is high (≥80%) */
 @keyframes ctx-pulse {
   0%,
@@ -4984,6 +5041,28 @@ body.panel-dragging {
   font-size: 10px;
   color: var(--ash);
   flex-shrink: 0;
+}
+.remote-session-bar {
+  box-sizing: border-box;
+  width: min(860px, calc(100% - 36px));
+  margin: 0 auto 10px;
+  padding: 8px 13px;
+  border-radius: var(--r-lg);
+  background: var(--info-soft, rgba(59, 130, 246, 0.08));
+  border: 1px solid var(--info-line, rgba(59, 130, 246, 0.2));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--info, #3b82f6);
+  font-size: 13px;
+}
+.remote-session-bar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--info, #3b82f6);
+  flex-shrink: 0;
+  animation: pulse 2s infinite;
 }
 .error-toast {
   margin: 0 18px 10px;

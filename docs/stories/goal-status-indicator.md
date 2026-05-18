@@ -8,8 +8,7 @@ Users need a persistent way to see the current active goal and loop step without
 
 ## Relevant Product Docs
 
-- docs/product/GOAL_HARNESS.md
-- docs/decisions/2026-05-17-goal-harness-model.md
+- docs/HARNESS.md
 
 ## Acceptance Criteria
 
