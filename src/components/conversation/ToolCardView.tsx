@@ -21,6 +21,7 @@ import {
 import { type Component, createEffect, createSignal, For, Show } from 'solid-js'
 import type { DisplayPreferences } from '../../lib/displayPreferences'
 import { FileIcon } from '../../lib/fileIcons'
+
 import { labelForTool } from '../../lib/sessionView'
 import type { ToolCard } from '../../types/session'
 
@@ -38,6 +39,7 @@ const SPEC_TOOLS = new Set([
   'spec_sync_tasks',
 ])
 const ASK_TOOLS = new Set(['ask_user_question'])
+const PLAN_TOOLS = new Set(['update_plan'])
 const MAX_CMD = 72
 
 const ICON_PROPS = { size: 13, strokeWidth: 2 } as const
@@ -65,6 +67,8 @@ function ToolIcon(props: ToolIconProps) {
       return <Search {...ICON_PROPS} />
     case 'find':
       return <FolderSearch {...ICON_PROPS} />
+    case 'update_plan':
+      return <ListChecks {...ICON_PROPS} />
     case 'ls':
       return <List {...ICON_PROPS} />
     case 'Agent':
@@ -559,6 +563,106 @@ const GenericToolRow: Component<GenericToolRowProps> = (props) => {
   )
 }
 
+// ── Plan tool row ───────────────────────────────────────────────────────
+
+type PlanItemStatus = 'pending' | 'in_progress' | 'completed'
+
+interface PlanItem {
+  step: string
+  status: PlanItemStatus
+}
+
+function isPlanItemStatus(value: unknown): value is PlanItemStatus {
+  return value === 'pending' || value === 'in_progress' || value === 'completed'
+}
+
+function parsePlanItems(args: Record<string, unknown>): PlanItem[] {
+  const raw = args.plan
+  if (!Array.isArray(raw)) return []
+
+  return raw
+    .map((item): PlanItem | null => {
+      if (!item || typeof item !== 'object') return null
+      const record = item as Record<string, unknown>
+      const step = typeof record.step === 'string' ? record.step.trim() : ''
+      const status = record.status
+      if (!step || !isPlanItemStatus(status)) return null
+      return { step, status }
+    })
+    .filter((item): item is PlanItem => item !== null)
+}
+
+function planStatusLabel(status: PlanItemStatus): string {
+  switch (status) {
+    case 'completed':
+      return 'done'
+    case 'in_progress':
+      return 'now'
+    case 'pending':
+      return 'next'
+  }
+}
+
+type PlanToolRowProps = {
+  card: ToolCard
+}
+
+const PlanToolRow: Component<PlanToolRowProps> = (props) => {
+  const items = () => parsePlanItems(props.card.args)
+  const explanation = () => {
+    const value = props.card.args.explanation
+    return typeof value === 'string' ? value.trim() : ''
+  }
+  const completed = () => items().filter((item) => item.status === 'completed').length
+  const inProgress = () => items().find((item) => item.status === 'in_progress')
+
+  return (
+    <div class="tool-row">
+      <div class="tool-ran-header plan-tool-header">
+        <ToolTypeIcon
+          toolName={props.card.toolName}
+          streaming={props.card.streaming}
+          isError={props.card.isError}
+        />
+        <span class="tool-ran-label">Plan updated</span>
+        <Show
+          when={inProgress()}
+          fallback={
+            <span class="plan-tool-summary">
+              {completed()} / {items().length} done
+            </span>
+          }
+        >
+          {(item) => <span class="plan-tool-summary">Now: {item().step}</span>}
+        </Show>
+        <Show when={props.card.streaming}>
+          <span class="tool-streaming-dot">·</span>
+        </Show>
+      </div>
+
+      <Show when={explanation()}>
+        <div class="plan-tool-explanation">{explanation()}</div>
+      </Show>
+
+      <Show when={items().length > 0}>
+        <ol class="plan-tool-list">
+          <For each={items()}>
+            {(item) => (
+              <li class={`plan-tool-item plan-tool-item--${item.status}`}>
+                <span class="plan-tool-marker" aria-hidden="true">
+                  {item.status === 'completed' ? '✓' : item.status === 'in_progress' ? '•' : '○'}
+                </span>
+                <span class="plan-tool-step">{item.step}</span>
+                <span class="plan-tool-status">{planStatusLabel(item.status)}</span>
+              </li>
+            )}
+          </For>
+        </ol>
+      </Show>
+    </div>
+  )
+}
+
 // ── Harness / legacy spec tool row ──────────────────────────────────────
 
 function harnessActionForTool(name: string): string {
@@ -771,6 +875,9 @@ export const ToolCardView: Component<ToolCardViewProps> = (props) => {
   }
   if (ASK_TOOLS.has(props.card.toolName)) {
     return <AskToolRow card={props.card} />
+  }
+  if (PLAN_TOOLS.has(props.card.toolName)) {
+    return <PlanToolRow card={props.card} />
   }
   return <GenericToolRow card={props.card} />
 }

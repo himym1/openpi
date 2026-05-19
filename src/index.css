@@ -3782,6 +3782,91 @@ body.panel-dragging {
   max-width: 260px;
 }
 
+/* ─── Plan tool row ─────────────────────────────────────────────────── */
+
+.plan-tool-header {
+  cursor: default;
+}
+
+.plan-tool-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--graphite-muted);
+  font-size: 12px;
+}
+
+.plan-tool-explanation {
+  margin: 4px 0 0 28px;
+  color: var(--graphite-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.plan-tool-list {
+  margin: 6px 0 0 28px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  list-style: none;
+}
+
+.plan-tool-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 2px 8px 2px 0;
+  color: var(--graphite);
+  font-size: 12px;
+}
+
+.plan-tool-marker {
+  width: 16px;
+  text-align: center;
+  color: var(--graphite-muted);
+  font-size: 11px;
+}
+
+.plan-tool-step {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-tool-status {
+  color: var(--graphite-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.plan-tool-item--completed {
+  color: var(--graphite-muted);
+}
+
+.plan-tool-item--completed .plan-tool-marker {
+  color: var(--success, #22c55e);
+}
+
+.plan-tool-item--completed .plan-tool-step {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--graphite-muted) 60%, transparent);
+}
+
+.plan-tool-item--in_progress {
+  color: var(--ink);
+}
+
+.plan-tool-item--in_progress .plan-tool-marker,
+.plan-tool-item--in_progress .plan-tool-status {
+  color: var(--accent);
+}
+
 /* ─── Ask tool row ──────────────────────────────────────────────────── */
 
 .ask-question-badge {
@@ -4263,6 +4348,59 @@ body.panel-dragging {
 .goal-banner-dismiss:hover {
   background: var(--surface-3);
   color: var(--fg);
+}
+
+/* ── Goal timer ──────────────────────────────────────────────────────────── */
+.goal-timer {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* ── Goal progress bar ──────────────────────────────────────────────────── */
+.goal-progress-wrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  width: 56px;
+  height: 14px;
+}
+.goal-progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.goal-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+/* ── Goal abort button ──────────────────────────────────────────────────── */
+.goal-banner-abort {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: rgb(239, 68, 68);
+  cursor: pointer;
+}
+.goal-banner-abort:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: rgb(248, 113, 113);
 }
 
 /* ── Composer box delivery-mode border hint ──────────────────────────────── */
@@ -7150,12 +7288,16 @@ body.panel-dragging {
 .file-panel {
   min-width: 180px;
   max-width: 400px;
+  min-height: 0;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--hairline);
   background: var(--canvas-warm);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .git-panel-header {
@@ -8991,10 +9133,19 @@ body.panel-dragging {
   text-align: center;
 }
 
+.ftree-item {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+}
+
 .ftree-row {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 1;
+  min-width: 0;
   width: 100%;
   min-height: 22px;
   padding: 1px 8px 1px 10px;
@@ -9007,9 +9158,43 @@ body.panel-dragging {
   white-space: nowrap;
   overflow: hidden;
 }
-.ftree-row:hover {
+.ftree-item:hover,
+.ftree-item:focus-within {
   background: color-mix(in srgb, var(--surface-soft) 78%, transparent);
+}
+
+.ftree-row:hover {
   color: var(--ink);
+}
+
+.ftree-root > .ftree-row:hover {
+  background: color-mix(in srgb, var(--surface-soft) 78%, transparent);
+}
+
+.ftree-delete-btn {
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ash);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ftree-item:hover .ftree-delete-btn,
+.ftree-delete-btn:focus-visible {
+  opacity: 1;
+}
+
+.ftree-delete-btn:hover {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
 }
 
 .ftree-workspace-root {

@@ -202,6 +202,18 @@ export default function App() {
       setActiveFileIdx((prev) => Math.min(prev, newFiles.length - 1))
     }
   }
+
+  const closeDeletedFilePreviews = (relPath: string, isDir: boolean) => {
+    const prefix = `${relPath.replace(/\/+$/, '')}/`
+    const newFiles = openFiles().filter(
+      (file) => file !== relPath && !(isDir && file.startsWith(prefix))
+    )
+    if (newFiles.length === openFiles().length) return
+    setOpenFiles(newFiles)
+    if (newFiles.length > 0) {
+      setActiveFileIdx((prev) => Math.min(prev, newFiles.length - 1))
+    }
+  }
   const [diffFiles, setDiffFiles] = createSignal<GitChangedFile[]>([])
   const [diffIndex, setDiffIndex] = createSignal(0)
   const [commitDiffHash, setCommitDiffHash] = createSignal<string | null>(null)
@@ -238,6 +250,28 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = createSignal(SIDEBAR_DEFAULT)
   const [gitPanelWidth, setGitPanelWidth] = createSignal(GIT_PANEL_DEFAULT)
   const [previewWidth, setPreviewWidth] = createSignal(PREVIEW_DEFAULT)
+
+  // ── Workbench context bridge — report visible file to main ──────────
+  createEffect(() => {
+    const files = openFiles()
+    const idx = activeFileIdx()
+    const relPath = files[idx]
+    const cwd = session.selectedWorkspacePath
+    if (relPath && relPath.length > 0 && cwd) {
+      const absPath = `${cwd}/${relPath}`
+      window.openpi.workbenchContext.update({
+        visibleFile: relPath,
+        visibleFileAbs: absPath,
+        terminalOutput: null,
+      })
+    } else {
+      window.openpi.workbenchContext.update({
+        visibleFile: null,
+        visibleFileAbs: null,
+        terminalOutput: null,
+      })
+    }
+  })
 
   // Load persisted panel widths and git side once
   onMount(() => {
@@ -1030,6 +1064,8 @@ export default function App() {
                       }}
                       activeGoalText={session.activeGoalText}
                       activeGoalStep={session.activeGoalStep}
+                      activeGoalElapsed={session.activeGoalElapsed}
+                      activeGoalProgress={session.activeGoalProgress}
                       onSetActiveGoal={session.setActiveGoal}
                       contextPercent={session.contextPercent}
                       agentTps={session.agentRunMetrics?.tps ?? null}
@@ -1144,6 +1180,7 @@ export default function App() {
                     cwd={cwd()}
                     changedPaths={new Set()}
                     onFileClick={(relPath) => openFile(relPath)}
+                    onFileDeleted={closeDeletedFilePreviews}
                   />
                 </div>
               </Show>

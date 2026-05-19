@@ -821,6 +821,13 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
                 editorViewRef = v
               }}
               onExtraScroll={syncEditorToPreview}
+              onFindRequest={() => openFindBar()}
+              onReplaceRequest={() => openFindBar(true)}
+              searchQuery={findOpen() ? findQuery() : ''}
+              searchCaseSensitive={findCaseSensitive()}
+              searchWholeWord={findWholeWord()}
+              searchRegex={findRegex()}
+              searchCurrentIndex={safeMatchIndex()}
             />
           </Show>
 
@@ -846,6 +853,13 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
                     editorViewRef = v
                   }}
                   onExtraScroll={syncEditorToPreview}
+                  onFindRequest={() => openFindBar()}
+                  onReplaceRequest={() => openFindBar(true)}
+                  searchQuery={findOpen() ? findQuery() : ''}
+                  searchCaseSensitive={findCaseSensitive()}
+                  searchWholeWord={findWholeWord()}
+                  searchRegex={findRegex()}
+                  searchCurrentIndex={safeMatchIndex()}
                 />
               </div>
 

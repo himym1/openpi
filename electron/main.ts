@@ -55,6 +55,8 @@ import {
   archiveSessionsRequestSchema,
   customizationsInventorySchema,
   customProviderSchema,
+  deleteFileRequestSchema,
+  deleteFileResultSchema,
   deleteSessionsRequestSchema,
   diagnosticsBundleSchema,
   fffFileSearchRequestSchema,
@@ -121,6 +123,7 @@ import {
   setThinkingSchema,
   skillItemSchema,
   unarchiveSessionsRequestSchema,
+  workbenchContextSchema,
   workspaceSummaryInfoSchema,
   workspaceSummaryRequestSchema,
   workspaceTrustRequestSchema,
@@ -152,7 +155,21 @@ import { checkProtectedPath, filterBlockedPaths } from './protectedPaths'
 import { redactObject } from './secretRedact'
 import { SessionIndexStore } from './sessionIndex'
 import { getSettings, saveSettings as writeSettings } from './settingsHost'
-import { checkForAppUpdate, openReleasePage, readChangelog } from './updater'
+import {
+  checkForAppUpdate,
+  initAutoUpdater,
+  openReleasePage,
+  quitAndInstall,
+  readChangelog,
+} from './updater'
+import {
+  bindWebContents,
+  buildWorkbenchContextPrefix,
+  getWorkbenchContext,
+  updateTerminalOutput,
+  updateVisibleFile,
+  type WorkbenchContext,
+} from './workbenchContext'
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -1000,21 +1017,42 @@ function registerHandlers(): void {
     const active = await ensureActiveSession()
     if (!active) return
     const { text, contextPrefix } = sessionPromptSchema.parse(raw)
-    requirePiSidecar().send({ type: 'prompt', text, contextPrefix })
+    requirePiSidecar().send({
+      type: 'prompt',
+      text,
+      contextPrefix: injectWorkbenchPrefix(contextPrefix),
+    })
   })
+
+  function injectWorkbenchPrefix(contextPrefix?: string): string | undefined {
+    const wbPrefix = buildWorkbenchContextPrefix()
+    if (!wbPrefix) return contextPrefix
+    return contextPrefix
+      ? `${wbPrefix}
+${contextPrefix}`
+      : wbPrefix
+  }
 
   ipcMain.handle(IPC.SESSION_STEER, async (_event, raw: unknown) => {
     const active = await ensureActiveSession()
     if (!active) return
     const { text, contextPrefix } = sessionPromptSchema.parse(raw)
-    requirePiSidecar().send({ type: 'steer', text, contextPrefix })
+    requirePiSidecar().send({
+      type: 'steer',
+      text,
+      contextPrefix: injectWorkbenchPrefix(contextPrefix),
+    })
   })
 
   ipcMain.handle(IPC.SESSION_FOLLOW_UP, async (_event, raw: unknown) => {
     const active = await ensureActiveSession()
     if (!active) return
     const { text, contextPrefix } = sessionPromptSchema.parse(raw)
-    requirePiSidecar().send({ type: 'follow_up', text, contextPrefix })
+    requirePiSidecar().send({
+      type: 'follow_up',
+      text,
+      contextPrefix: injectWorkbenchPrefix(contextPrefix),
+    })
   })
 
   ipcMain.handle(
@@ -1058,6 +1096,18 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.SESSION_ABORT, async () => {
     if (!state) return
     requirePiSidecar().send({ type: 'abort' })
+  })
+
+  // ── Workbench context (ToolContext pattern) ────────────────────────────────
+
+  ipcMain.on(IPC.WORKBENCH_CONTEXT_UPDATE, (_event, raw: unknown): void => {
+    const payload = workbenchContextSchema.parse(raw)
+    updateVisibleFile(payload.visibleFile, payload.visibleFileAbs)
+    updateTerminalOutput(payload.terminalOutput)
+  })
+
+  ipcMain.handle(IPC.WORKBENCH_CONTEXT_GET, (): WorkbenchContext => {
+    return getWorkbenchContext()
   })
 
   ipcMain.handle(IPC.GET_MODELS, async (): Promise<ModelInfo[]> => {
@@ -1394,6 +1444,10 @@ function registerHandlers(): void {
     openReleasePage(url)
   })
 
+  ipcMain.handle(IPC.APP_UPDATE_INSTALL, (): void => {
+    quitAndInstall()
+  })
+
   ipcMain.handle(IPC.GET_CHANGELOG, (): string | null => {
     return readChangelog()
   })
@@ -1622,13 +1676,31 @@ function registerHandlers(): void {
     }
   )
 
+  const resolveWorkspaceRelativePath = (relPath: string, action: string): string => {
+    if (!state?.cwd) throw new Error('No active workspace')
+    const full = path.resolve(state.cwd, relPath)
+    const sep = path.sep
+    if (full === state.cwd || !full.startsWith(state.cwd + sep)) {
+      throw new Error(`Refusing to ${action} outside workspace`)
+    }
+    return full
+  }
+
+  const isGitMetadataPath = (relPath: string): boolean => {
+    const parts = relPath.split(/[\\/]+/).filter(Boolean)
+    return parts.includes('.git')
+  }
+
   ipcMain.handle(IPC.READ_FILE, (_event, raw: unknown): FileContent | null => {
     if (!state?.cwd) return null
     const { path: relPath } = readFileRequestSchema.parse(raw)
     // Validate path stays inside workspace (no directory traversal)
-    const full = path.resolve(state.cwd, relPath)
-    const sep = path.sep
-    if (full !== state.cwd && !full.startsWith(state.cwd + sep)) return null
+    let full: string
+    try {
+      full = resolveWorkspaceRelativePath(relPath, 'read')
+    } catch {
+      return null
+    }
     try {
       const raw = fs.readFileSync(full, 'utf-8')
       const size = Buffer.byteLength(raw, 'utf-8')
@@ -1645,11 +1717,7 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.WRITE_FILE, async (_event, raw: unknown): Promise<void> => {
     if (!state?.cwd) throw new Error('No active workspace')
     const { path: relPath, content } = writeFileRequestSchema.parse(raw)
-    const full = path.resolve(state.cwd, relPath)
-    const sep = path.sep
-    if (full !== state.cwd && !full.startsWith(state.cwd + sep)) {
-      throw new Error('Refusing to write outside workspace')
-    }
+    const full = resolveWorkspaceRelativePath(relPath, 'write')
     const violation = checkProtectedPath(full, state.cwd)
     if (violation?.level === 'hard') {
       throw new Error(`Refusing to write protected path: ${violation.reason}`)
@@ -1663,6 +1731,47 @@ function registerHandlers(): void {
       if (!approved) return
     }
     fs.writeFileSync(full, content, 'utf-8')
+  })
+
+  ipcMain.handle(IPC.DELETE_FILE, async (event, raw: unknown): Promise<unknown> => {
+    if (!state?.cwd) throw new Error('No active workspace')
+    const { path: relPath } = deleteFileRequestSchema.parse(raw)
+    const full = resolveWorkspaceRelativePath(relPath, 'delete')
+
+    if (isGitMetadataPath(relPath)) {
+      throw new Error('Refusing to delete Git metadata')
+    }
+
+    const violation = checkProtectedPath(full, state.cwd)
+    if (violation && violation.level !== 'soft') {
+      throw new Error(`Refusing to delete protected path: ${violation.reason}`)
+    }
+
+    const stat = fs.statSync(full)
+    const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow
+    const confirmOptions = {
+      type: 'warning' as const,
+      buttons: ['Move to Trash', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: `Delete ${stat.isDirectory() ? 'folder' : 'file'}?`,
+      message: `Move ${path.basename(full)} to Trash?`,
+      detail: relPath,
+    }
+    const { response } = parentWindow
+      ? await dialog.showMessageBox(parentWindow, confirmOptions)
+      : await dialog.showMessageBox(confirmOptions)
+    if (response !== 0) return deleteFileResultSchema.parse({ trashed: false })
+
+    await shell.trashItem(full)
+    mainWindow?.webContents.send(IPC.FILE_TREE_CHANGED)
+    try {
+      const git = await getGitHost()
+      mainWindow?.webContents.send(IPC.GIT_STATUS_CHANGED, await git.getGitStatus(state.cwd))
+    } catch {
+      // Git status refresh is best-effort; the file-tree refresh above is authoritative here.
+    }
+    return deleteFileResultSchema.parse({ trashed: true })
   })
 
   // ── Format file with Biome ───────────────────────────────────────────────────
@@ -2217,6 +2326,12 @@ app.whenReady().then(() => {
   registerHandlers()
   createWindow()
 
+  // ── Auto-updater ─────────────────────────────────────────────────────────
+  initAutoUpdater(mainWindow)
+
+  // ── Workbench context bridge ─────────────────────────────────────────────
+  if (mainWindow) bindWebContents(mainWindow.webContents)
+
   // ── Pi TUI ↔ OpenPi sync bridge watcher ──────────────────────────────────
   // Monitors the shared status file written by the openpi-bridge extension
   // loaded by Pi TUI (or another Pi process). When available, watches the
@@ -2372,14 +2487,12 @@ app.whenReady().then(() => {
   // Cold-start app update check — runs after window is created so the
   // renderer is ready to receive APP_UPDATE_STATUS when it subscribes.
   // Delay slightly to not compete with session startup IPC.
+  // Auto-updater already forwards status via initAutoUpdater listener.
+  // This just triggers the deferred startup check.
   setTimeout(() => {
-    void checkForAppUpdate()
-      .then((status) => {
-        mainWindow?.webContents.send(IPC.APP_UPDATE_STATUS, appUpdateStatusSchema.parse(status))
-      })
-      .catch(() => {
-        /* silently ignore network errors on startup */
-      })
+    void checkForAppUpdate().catch(() => {
+      /* silently ignore network errors on startup */
+    })
   }, 3000)
 })
 

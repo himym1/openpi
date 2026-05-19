@@ -12,9 +12,10 @@ import { json } from '@codemirror/lang-json'
 import { markdown } from '@codemirror/lang-markdown'
 import { python } from '@codemirror/lang-python'
 import { rust } from '@codemirror/lang-rust'
-import { Compartment, EditorState, type Extension } from '@codemirror/state'
+import { Compartment, EditorState, type Extension, Prec, RangeSetBuilder } from '@codemirror/state'
+import { Decoration, type DecorationSet, EditorView, keymap } from '@codemirror/view'
 import { githubDark, githubLight } from '@uiw/codemirror-theme-github'
-import { basicSetup, EditorView } from 'codemirror'
+import { basicSetup } from 'codemirror'
 import { createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 
 // ── Language detection ───────────────────────────────────────────────────────
@@ -52,6 +53,85 @@ function languageFor(filename: string): Extension {
 
 function codeMirrorThemeForCurrentAppTheme(): Extension {
   return document.documentElement.getAttribute('data-theme') === 'light' ? githubLight : githubDark
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+interface SearchOptions {
+  text: string
+  query?: string
+  caseSensitive?: boolean
+  wholeWord?: boolean
+  regex?: boolean
+  currentIndex?: number
+}
+
+function collectSearchMatches(options: SearchOptions): Array<{ from: number; to: number }> {
+  const query = options.query ?? ''
+  if (!query || !options.text) return []
+
+  const pattern = options.regex
+    ? query
+    : `${options.wholeWord ? '\\b' : ''}${escapeRegExp(query)}${options.wholeWord ? '\\b' : ''}`
+  const re = new RegExp(pattern, options.caseSensitive ? 'g' : 'gi')
+  const matches: Array<{ from: number; to: number }> = []
+
+  for (let match = re.exec(options.text); match !== null; match = re.exec(options.text)) {
+    if (match[0].length > 0) {
+      matches.push({ from: match.index, to: match.index + match[0].length })
+    } else {
+      re.lastIndex++
+    }
+  }
+
+  return matches
+}
+
+function activeSearchIndex(matchesLength: number, currentIndex = 0): number {
+  return ((currentIndex % matchesLength) + matchesLength) % matchesLength
+}
+
+function getActiveSearchMatch(options: SearchOptions): { from: number; to: number } | undefined {
+  try {
+    const matches = collectSearchMatches(options)
+    if (!matches.length) return undefined
+    return matches[activeSearchIndex(matches.length, options.currentIndex)]
+  } catch {
+    return undefined
+  }
+}
+
+function buildSearchDecorations(options: SearchOptions): DecorationSet {
+  try {
+    const matches = collectSearchMatches(options)
+    if (!matches.length) return Decoration.none
+
+    const currentIndex = activeSearchIndex(matches.length, options.currentIndex)
+    const builder = new RangeSetBuilder<Decoration>()
+
+    matches.forEach((match, index) => {
+      builder.add(
+        match.from,
+        match.to,
+        Decoration.mark({
+          class:
+            index === currentIndex
+              ? 'cm-openpi-searchMatch cm-openpi-searchMatch-current'
+              : 'cm-openpi-searchMatch',
+        })
+      )
+    })
+
+    return builder.finish()
+  } catch {
+    return Decoration.none
+  }
+}
+
+function searchHighlightExtension(options: SearchOptions): Extension {
+  return EditorView.decorations.of(buildSearchDecorations(options))
 }
 
 // ── Theme ────────────────────────────────────────────────────────────────────
@@ -99,6 +179,14 @@ const editorChromeTheme = EditorView.theme({
     backgroundColor: 'rgba(55, 148, 255, 0.1)',
     outline: '1px solid var(--accent)',
   },
+  '.cm-openpi-searchMatch': {
+    backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)',
+    borderRadius: '2px',
+  },
+  '.cm-openpi-searchMatch-current': {
+    backgroundColor: 'color-mix(in srgb, var(--warning) 45%, var(--accent) 20%)',
+    outline: '1px solid color-mix(in srgb, var(--warning) 70%, transparent)',
+  },
 })
 
 // ── Props ────────────────────────────────────────────────────────────────────
@@ -110,6 +198,13 @@ export interface CodeMirrorEditorProps {
   /** Callback to expose the EditorView instance for external DOM access (scroll sync, focus) */
   onViewInit?: (view: EditorView) => void
   onExtraScroll?: () => void
+  onFindRequest?: () => void
+  onReplaceRequest?: () => void
+  searchQuery?: string
+  searchCaseSensitive?: boolean
+  searchWholeWord?: boolean
+  searchRegex?: boolean
+  searchCurrentIndex?: number
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -120,15 +215,51 @@ export function CodeMirrorEditor(props: CodeMirrorEditorProps) {
   const [ready, setReady] = createSignal(false)
   const languageCompartment = new Compartment()
   const themeCompartment = new Compartment()
+  const searchHighlightCompartment = new Compartment()
 
   onMount(() => {
     view = new EditorView({
       state: EditorState.create({
         doc: props.value,
         extensions: [
+          Prec.highest(
+            keymap.of([
+              {
+                key: 'Mod-f',
+                run: () => {
+                  props.onFindRequest?.()
+                  return true
+                },
+              },
+              {
+                key: 'Mod-Alt-f',
+                run: () => {
+                  props.onReplaceRequest?.()
+                  return true
+                },
+              },
+              {
+                key: 'Mod-Shift-f',
+                run: () => {
+                  props.onReplaceRequest?.()
+                  return true
+                },
+              },
+            ])
+          ),
           basicSetup,
           themeCompartment.of(codeMirrorThemeForCurrentAppTheme()),
           editorChromeTheme,
+          searchHighlightCompartment.of(
+            searchHighlightExtension({
+              text: props.value,
+              query: props.searchQuery,
+              caseSensitive: props.searchCaseSensitive,
+              wholeWord: props.searchWholeWord,
+              regex: props.searchRegex,
+              currentIndex: props.searchCurrentIndex,
+            })
+          ),
           languageCompartment.of(languageFor(props.filename)),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
@@ -175,6 +306,39 @@ export function CodeMirrorEditor(props: CodeMirrorEditorProps) {
     if (!view || !ready()) return
     view.dispatch({
       effects: languageCompartment.reconfigure(languageFor(props.filename)),
+    })
+  })
+
+  createEffect(() => {
+    if (!view || !ready()) return
+    view.dispatch({
+      effects: searchHighlightCompartment.reconfigure(
+        searchHighlightExtension({
+          text: props.value,
+          query: props.searchQuery,
+          caseSensitive: props.searchCaseSensitive,
+          wholeWord: props.searchWholeWord,
+          regex: props.searchRegex,
+          currentIndex: props.searchCurrentIndex,
+        })
+      ),
+    })
+  })
+
+  createEffect(() => {
+    if (!view || !ready()) return
+    const match = getActiveSearchMatch({
+      text: props.value,
+      query: props.searchQuery,
+      caseSensitive: props.searchCaseSensitive,
+      wholeWord: props.searchWholeWord,
+      regex: props.searchRegex,
+      currentIndex: props.searchCurrentIndex,
+    })
+    if (!match) return
+
+    view.dispatch({
+      effects: EditorView.scrollIntoView(match.from, { y: 'center' }),
     })
   })
 

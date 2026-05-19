@@ -9,6 +9,7 @@
  * Actual I/O lives in Electron main (getFileTree IPC).
  */
 
+import { Trash2 } from 'lucide-solid'
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid-js'
 import { FileIcon, FolderIcon } from '../../lib/fileIcons'
 import type { FileTreeNode, FileTreeResult } from '../../lib/ipc'
@@ -17,6 +18,7 @@ interface FileTreeProps {
   cwd: string | null
   changedPaths?: Set<string>
   onFileClick?: (relPath: string) => void
+  onFileDeleted?: (relPath: string, isDir: boolean) => void
   triggerCollapseAll?: number
 }
 
@@ -39,6 +41,7 @@ interface NodeProps {
   expanded: Set<string>
   onToggle: (path: string) => void
   onFileClick?: (relPath: string) => void
+  onDelete?: (node: FileTreeNode) => void
 }
 
 function TreeNode(props: NodeProps) {
@@ -49,28 +52,48 @@ function TreeNode(props: NodeProps) {
     <Show
       when={props.node.isDir}
       fallback={
-        <button
-          type="button"
-          class="ftree-row ftree-file"
-          title={props.node.path}
-          onClick={() => props.onFileClick?.(props.node.path)}
-        >
-          <TreeConnector parentLines={props.parentLines} isLast={props.isLast} />
-          <FileIcon name={props.node.name} size={15} />
-          <span class={`ftree-name${isChanged() ? ' is-changed' : ''}`}>{props.node.name}</span>
-        </button>
+        <div class="ftree-item">
+          <button
+            type="button"
+            class="ftree-row ftree-file"
+            title={props.node.path}
+            onClick={() => props.onFileClick?.(props.node.path)}
+          >
+            <TreeConnector parentLines={props.parentLines} isLast={props.isLast} />
+            <FileIcon name={props.node.name} size={15} />
+            <span class={`ftree-name${isChanged() ? ' is-changed' : ''}`}>{props.node.name}</span>
+          </button>
+          <button
+            type="button"
+            class="ftree-delete-btn"
+            title={`Move ${props.node.name} to Trash`}
+            onClick={() => props.onDelete?.(props.node)}
+          >
+            <Trash2 size={12} strokeWidth={1.8} />
+          </button>
+        </div>
       }
     >
-      <button
-        type="button"
-        class="ftree-row ftree-dir"
-        onClick={() => props.onToggle(props.node.path)}
-        title={props.node.path}
-      >
-        <TreeConnector parentLines={props.parentLines} isLast={props.isLast} />
-        <FolderIcon name={props.node.name} size={15} open={isExpanded()} />
-        <span class={`ftree-name${isChanged() ? ' is-changed' : ''}`}>{props.node.name}</span>
-      </button>
+      <div class="ftree-item">
+        <button
+          type="button"
+          class="ftree-row ftree-dir"
+          onClick={() => props.onToggle(props.node.path)}
+          title={props.node.path}
+        >
+          <TreeConnector parentLines={props.parentLines} isLast={props.isLast} />
+          <FolderIcon name={props.node.name} size={15} open={isExpanded()} />
+          <span class={`ftree-name${isChanged() ? ' is-changed' : ''}`}>{props.node.name}</span>
+        </button>
+        <button
+          type="button"
+          class="ftree-delete-btn"
+          title={`Move ${props.node.name} to Trash`}
+          onClick={() => props.onDelete?.(props.node)}
+        >
+          <Trash2 size={12} strokeWidth={1.8} />
+        </button>
+      </div>
       <Show when={isExpanded()}>
         <For each={props.node.children ?? []}>
           {(child, idx) => {
@@ -85,6 +108,7 @@ function TreeNode(props: NodeProps) {
                 expanded={props.expanded}
                 onToggle={props.onToggle}
                 onFileClick={props.onFileClick}
+                onDelete={props.onDelete}
               />
             )
           }}
@@ -146,6 +170,17 @@ export function FileTree(props: FileTreeProps) {
     })
   }
 
+  const deleteNode = async (node: FileTreeNode) => {
+    try {
+      const result = await window.openpi.deleteFile(node.path)
+      if (!result.trashed) return
+      props.onFileDeleted?.(node.path, node.isDir)
+      void refreshTree(false)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'Could not move item to Trash')
+    }
+  }
+
   const changedPaths = () => props.changedPaths ?? new Set<string>()
   const isRootExpanded = () => expanded().has('')
 
@@ -177,6 +212,7 @@ export function FileTree(props: FileTreeProps) {
                   expanded={expanded()}
                   onToggle={toggle}
                   onFileClick={props.onFileClick}
+                  onDelete={deleteNode}
                 />
               )}
             </For>

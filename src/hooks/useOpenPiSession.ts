@@ -114,6 +114,19 @@ export function useOpenPiSession() {
     null
   )
   const [goalUpdate, setGoalUpdate] = createSignal<GoalUpdate | null>(null)
+
+  // Live elapsed offset: ticks up every second while the agent is streaming
+  const [goalElapsedOffset, setGoalElapsedOffset] = createSignal(0)
+  createEffect(() => {
+    if (isStreaming() && activeGoalText()) {
+      const id = setInterval(() => {
+        setGoalElapsedOffset((o) => o + 1)
+      }, 1000)
+      onCleanup(() => clearInterval(id))
+    } else {
+      setGoalElapsedOffset(0)
+    }
+  })
   const [localActivityAt, setLocalActivityAt] = createSignal(0)
 
   const markLocalActivity = () => {
@@ -349,6 +362,10 @@ export function useOpenPiSession() {
     unsubs.push(
       window.openpi.onGoalUpdate((payload) => {
         setGoalUpdate(payload)
+        // Persistence: sync objective → activeGoalText on first arrival or restart
+        if (payload.objective && !activeGoalText()) {
+          setActiveGoalText(payload.objective)
+        }
       })
     )
 
@@ -756,6 +773,19 @@ export function useOpenPiSession() {
       if (!goal) return null
       return isStreaming() ? 'running' : 'idle'
     },
+    get activeGoalElapsed() {
+      const base = goalUpdate()?.timeUsedSeconds ?? 0
+      return base + goalElapsedOffset()
+    },
+    get activeGoalProgress() {
+      const gu = goalUpdate()
+      if (!gu || gu.tokensUsed === undefined) return null
+      return {
+        tokensUsed: gu.tokensUsed,
+        tokenBudget: gu.tokenBudget,
+        percent: gu.tokenBudget ? Math.min(gu.tokensUsed / gu.tokenBudget, 1) : null,
+      }
+    },
     get steeringQueue() {
       return steeringQueue()
     },
@@ -774,6 +804,7 @@ export function useOpenPiSession() {
     get goalUpdate() {
       return goalUpdate()
     },
+
     get localActivityAt() {
       return localActivityAt()
     },
@@ -841,6 +872,7 @@ export function useOpenPiSession() {
     dismissAsk,
     setActiveGoal,
     clearActiveGoal,
+
     clearTasks: () => {
       _taskTracker.clear()
       setTasks([])
