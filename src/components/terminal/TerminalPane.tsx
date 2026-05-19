@@ -1,5 +1,6 @@
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal } from '@xterm/xterm'
 import { createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 import {
@@ -8,6 +9,7 @@ import {
   buildTerminalFontStack,
   loadAppearancePreferences,
 } from '../../lib/appearancePreferences'
+import { parseTerminalIntegrationData } from './shellIntegration'
 import 'nerdfonts-web/nf.css'
 
 interface Props {
@@ -16,9 +18,12 @@ interface Props {
   isVisible: boolean
   /** Called when the PTY process exits */
   onExit?: (id: string) => void
+  /** Called when shell integration reports a cwd change. */
+  onCwdChange?: (id: string, cwd: string) => void
 }
 
 const NERD_SYMBOL_FONT = 'NerdFontsSymbols Nerd Font'
+const TERMINAL_FONT_SIZE = 15
 
 async function loadTerminalFonts(fontSize: number, preferredFont = ''): Promise<void> {
   if (!document.fonts?.load) return
@@ -44,16 +49,16 @@ export function TerminalPane(props: Props) {
     let unsubData: (() => void) | null = null
     let unsubExit: (() => void) | null = null
 
-    const fontSize = 12
+    const fontSize = TERMINAL_FONT_SIZE
     const nextTerm = new Terminal({
       theme: {
-        background: '#0c0b0a',
-        foreground: '#e4e0d8',
-        cursor: '#e4e0d8',
-        cursorAccent: '#0c0b0a',
-        selectionBackground: 'rgba(244,241,236,0.2)',
-        black: '#1a1a1a',
-        brightBlack: '#3a3a3a',
+        background: '#070706',
+        foreground: '#e9e1d6',
+        cursor: '#f5efe6',
+        cursorAccent: '#070706',
+        selectionBackground: 'rgba(245, 239, 230, 0.18)',
+        black: '#161514',
+        brightBlack: '#5c5751',
         red: '#e06c75',
         brightRed: '#e06c75',
         green: '#98c379',
@@ -66,13 +71,16 @@ export function TerminalPane(props: Props) {
         brightMagenta: '#c678dd',
         cyan: '#56b6c2',
         brightCyan: '#56b6c2',
-        white: '#d4d4d4',
-        brightWhite: '#ffffff',
+        white: '#d8d1c8',
+        brightWhite: '#fff8ef',
       },
       fontFamily: buildTerminalFontStack(''),
       fontSize,
-      lineHeight: 1.35,
-      cursorStyle: 'bar',
+      lineHeight: 1.12,
+      letterSpacing: 0,
+      fontWeight: 600,
+      fontWeightBold: 700,
+      cursorStyle: 'block',
       cursorBlink: true,
       scrollback: 5000,
       customGlyphs: true,
@@ -81,8 +89,20 @@ export function TerminalPane(props: Props) {
 
     const nextFitAddon = new FitAddon()
     const webLinksAddon = new WebLinksAddon()
+    let webglAddon: WebglAddon | null = null
     nextTerm.loadAddon(nextFitAddon)
     nextTerm.loadAddon(webLinksAddon)
+
+    try {
+      webglAddon = new WebglAddon()
+      webglAddon.onContextLoss(() => {
+        webglAddon?.dispose()
+        webglAddon = null
+      })
+      nextTerm.loadAddon(webglAddon)
+    } catch {
+      // Fall back to the default canvas renderer when WebGL is unavailable.
+    }
 
     const applyTerminalFont = (prefs: AppearancePreferences) => {
       nextTerm.options.fontFamily = buildTerminalFontStack(prefs.terminalFont)
@@ -129,7 +149,10 @@ export function TerminalPane(props: Props) {
       })
 
       unsubData = window.openpi.pty.onData(({ id, data }) => {
-        if (id === ptyId) nextTerm.write(data)
+        if (id !== ptyId) return
+        const parsed = parseTerminalIntegrationData(data)
+        if (parsed.cwd) props.onCwdChange?.(props.id, parsed.cwd)
+        if (parsed.data) nextTerm.write(parsed.data)
       })
 
       unsubExit = window.openpi.pty.onExit(({ id }) => {
@@ -152,6 +175,7 @@ export function TerminalPane(props: Props) {
         ptyId = null
       }
       window.removeEventListener(APPEARANCE_PREFERENCES_CHANGED_EVENT, onAppearanceChanged)
+      webglAddon?.dispose()
       nextTerm.dispose()
       term = null
       fitAddon = null

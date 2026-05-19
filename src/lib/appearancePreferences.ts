@@ -54,18 +54,27 @@ const CODE_FONT_FALLBACKS = [
 ]
 
 const TERMINAL_FONT_FALLBACKS = [
-  '"Berkeley Mono"',
-  '"NerdFontsSymbols Nerd Font"',
-  '"Symbols Nerd Font Mono"',
-  '"Symbols Nerd Font"',
   '"MesloLGS NF"',
   '"MesloLGM Nerd Font Mono"',
   '"Meslo LG M for Powerline"',
-  '"Source Code Pro for Powerline"',
-  '"Symbol Neu for Powerline"',
+  '"Hack Nerd Font Mono"',
+  '"FiraCode Nerd Font Mono"',
+  '"JetBrainsMono Nerd Font Mono"',
+  '"SauceCodePro Nerd Font Mono"',
+  '"Berkeley Mono"',
   '"JetBrains Mono"',
   '"IBM Plex Mono"',
+  'SFMono-Regular',
+  'Menlo',
+  'Monaco',
+  'Consolas',
+  '"Liberation Mono"',
   'ui-monospace',
+  '"Source Code Pro for Powerline"',
+  '"NerdFontsSymbols Nerd Font"',
+  '"Symbols Nerd Font Mono"',
+  '"Symbols Nerd Font"',
+  '"Symbol Neu for Powerline"',
   'monospace',
 ]
 

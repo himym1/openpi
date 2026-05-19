@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, onMount, Show } from 'solid-js'
 import { OutputPane } from './OutputPane'
+import { terminalCwdLabel } from './shellIntegration'
 import { TerminalPane } from './TerminalPane'
 
 const DEFAULT_HEIGHT = 260
@@ -10,6 +11,8 @@ const PREF_KEY = 'terminalHeight'
 interface TermTab {
   id: string
   label: string
+  cwd: string
+  renamed?: boolean
   exited?: boolean
 }
 
@@ -65,11 +68,13 @@ export function TerminalPanel(props: Props) {
     dragState = { startY: e.clientY, startHeight: height() }
   }
 
+  const terminalLabel = (cwd: string) => `shell · ${terminalCwdLabel(cwd) || 'terminal'}`
+
   const addTerminal = () => {
     tabCount += 1
     const id = `term-${tabCount}`
-    const label = `shell ${tabCount}`
-    setTermTabs((prev) => [...prev, { id, label }])
+    const cwd = props.cwd
+    setTermTabs((prev) => [...prev, { id, cwd, label: terminalLabel(cwd) }])
     setActiveTab(id)
   }
 
@@ -79,6 +84,14 @@ export function TerminalPanel(props: Props) {
 
   const onTerminalExit = (id: string) => {
     setTermTabs((prev) => prev.map((t) => (t.id === id ? { ...t, exited: true } : t)))
+  }
+
+  const onTerminalCwdChange = (id: string, cwd: string) => {
+    setTermTabs((prev) =>
+      prev.map((t) =>
+        t.id === id ? { ...t, cwd, label: t.renamed ? t.label : terminalLabel(cwd) } : t
+      )
+    )
   }
 
   const _startRename = (tab: TermTab) => {
@@ -94,7 +107,7 @@ export function TerminalPanel(props: Props) {
     const id = renamingTabId()
     const label = renameValue().trim()
     if (id && label) {
-      setTermTabs((prev) => prev.map((t) => (t.id === id ? { ...t, label } : t)))
+      setTermTabs((prev) => prev.map((t) => (t.id === id ? { ...t, label, renamed: true } : t)))
     }
     setRenamingTabId(null)
     setRenameValue('')
@@ -127,15 +140,43 @@ export function TerminalPanel(props: Props) {
           <For each={termTabs()}>
             {(tab) => (
               <div
-                class={`terminal-tab terminal-tab-closable${activeTab() === tab.id ? ' is-active' : ''}`}
+                class={`terminal-tab terminal-tab-closable${activeTab() === tab.id ? ' is-active' : ''}${tab.exited ? ' is-exited' : ''}`}
               >
-                <button
-                  type="button"
-                  class="terminal-tab-label"
-                  onClick={() => setActiveTab(tab.id)}
+                <span
+                  class={`terminal-tab-status ${tab.exited ? 'is-exited' : 'is-running'}`}
+                  aria-hidden="true"
+                />
+                <Show
+                  when={renamingTabId() === tab.id}
+                  fallback={
+                    <button
+                      type="button"
+                      class="terminal-tab-label"
+                      onClick={() => setActiveTab(tab.id)}
+                      onDblClick={() => _startRename(tab)}
+                      title={`${tab.cwd}${tab.exited ? ' — exited' : ''}`}
+                    >
+                      {tab.label}
+                    </button>
+                  }
                 >
-                  {tab.label}
-                </button>
+                  <input
+                    ref={(el) => {
+                      renameInputRef = el
+                    }}
+                    class="terminal-tab-rename-input"
+                    value={renameValue()}
+                    onInput={(e) => setRenameValue(e.currentTarget.value)}
+                    onBlur={_commitRename}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') _commitRename()
+                      if (e.key === 'Escape') {
+                        setRenamingTabId(null)
+                        setRenameValue('')
+                      }
+                    }}
+                  />
+                </Show>
                 <button
                   type="button"
                   class="terminal-tab-close"
@@ -186,6 +227,7 @@ export function TerminalPanel(props: Props) {
                   cwd={props.cwd}
                   isVisible={activeTab() === tab.id && props.isOpen}
                   onExit={onTerminalExit}
+                  onCwdChange={onTerminalCwdChange}
                 />
               </div>
             )}
