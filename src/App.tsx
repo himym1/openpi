@@ -48,6 +48,11 @@ import {
   formatFileLineCommentsPrompt,
   type NewFileLineComment,
 } from './lib/fileLineComments'
+import {
+  loadLanguagePreference,
+  UI_LANGUAGE_CHANGED_EVENT,
+  type UiLanguagePreference,
+} from './lib/i18n'
 import type { AppInfo, GitChangedFile, GitFileDiff, SkillItem } from './lib/ipc'
 import {
   buildKeybindingEntries,
@@ -87,6 +92,7 @@ export default function App() {
   const [scrollToMessageId, setScrollToMessageId] = createSignal<string | null>(null)
   let scrollToMessageNonce = 0
   const [treeRefreshVersion, setTreeRefreshVersion] = createSignal(0)
+  const [_languagePreference, setLanguagePreference] = createSignal<UiLanguagePreference>('system')
   let prevStreaming = false
 
   const toggleLeftDrawerMode = (mode: LeftDrawerMode) => {
@@ -334,6 +340,9 @@ export default function App() {
     loadDisplayPreferences()
       .then(setDisplayPreferences)
       .catch(() => {})
+    loadLanguagePreference()
+      .then(setLanguagePreference)
+      .catch(() => {})
     loadCustomKeybindings()
       .then(setCustomKeybindings)
       .catch(() => {})
@@ -342,6 +351,11 @@ export default function App() {
       setDisplayPreferences((event as CustomEvent<DisplayPreferences>).detail)
     }
     window.addEventListener(DISPLAY_PREFERENCES_CHANGED_EVENT, onDisplayPreferencesChanged)
+
+    const onLanguageChanged = (event: Event) => {
+      setLanguagePreference((event as CustomEvent<UiLanguagePreference>).detail)
+    }
+    window.addEventListener(UI_LANGUAGE_CHANGED_EVENT, onLanguageChanged)
 
     const onKeybindingsChanged = (event: Event) => {
       setCustomKeybindings((event as CustomEvent<KeybindingOverrides>).detail)
@@ -442,6 +456,7 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener(DISPLAY_PREFERENCES_CHANGED_EVENT, onDisplayPreferencesChanged)
+      window.removeEventListener(UI_LANGUAGE_CHANGED_EVENT, onLanguageChanged)
       window.removeEventListener(KEYBINDINGS_CHANGED_EVENT, onKeybindingsChanged)
     }
   })

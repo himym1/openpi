@@ -262,75 +262,75 @@ export function useOpenPiSession() {
     )
   )
 
+  const applySessionReady = (payload: SessionReady) => {
+    latestSessionFile = payload.sessionFile ?? null
+
+    batch(() => {
+      setReady(payload)
+      setSelectedWorkspacePath(payload.cwd)
+      setMessages([])
+      setError(null)
+      setSteeringQueue([])
+      setFollowUpQueue([])
+      setSessionNameState(payload.sessionName ?? null)
+      // Clear extension trackers on new session
+      _taskTracker.clear()
+      _askTracker.clear()
+      _subagentTracker.clear()
+      setTasks([])
+      setAskState(null)
+      setAgents([])
+      if (payload.model) {
+        setCurrentModel(payload.model)
+        currentModelName = payload.model.name
+      }
+      if (payload.thinkingLevel) setThinkingLevelState(payload.thinkingLevel)
+      setHasMoreHistoryBefore(false)
+      setHistoryBeforeEntryId(null)
+      setContextPercent(null)
+      setWorkspaceSummary(null)
+    })
+
+    const summaryCwd = payload.cwd
+    window.openpi
+      .getWorkspaceSummary(summaryCwd)
+      .then((info) => {
+        if (ready()?.cwd !== summaryCwd) return
+        setWorkspaceSummary(info)
+        setGitBranch(info.branch)
+      })
+      .catch(() => {
+        if (ready()?.cwd !== summaryCwd) return
+        setWorkspaceSummary(null)
+        setGitBranch(null)
+      })
+
+    if (payload.sessionFile) {
+      const sessionFile = payload.sessionFile
+      window.openpi
+        .getSessionMessages(sessionFile, { limit: HISTORY_PAGE_LIMIT })
+        .then((page) => {
+          if (latestSessionFile !== sessionFile) return
+          batch(() => {
+            setMessages(page.messages)
+            setHasMoreHistoryBefore(page.hasMoreBefore)
+            setHistoryBeforeEntryId(page.nextBeforeEntryId)
+          })
+        })
+        .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+    }
+
+    void loadSessionIndex(payload.cwd)
+    void refreshContextUsage()
+  }
+
   // ── IPC subscriptions (mounted once, cleaned up on unmount) ──────────────
   onMount(() => {
     const unsubs: Array<() => void> = []
 
     unsubs.push(window.openpi.onSessionEvent(handleEvent))
 
-    unsubs.push(
-      window.openpi.onSessionReady((payload) => {
-        latestSessionFile = payload.sessionFile ?? null
-
-        batch(() => {
-          setReady(payload)
-          setSelectedWorkspacePath(payload.cwd)
-          setMessages([])
-          setError(null)
-          setSteeringQueue([])
-          setFollowUpQueue([])
-          setSessionNameState(payload.sessionName ?? null)
-          // Clear extension trackers on new session
-          _taskTracker.clear()
-          _askTracker.clear()
-          _subagentTracker.clear()
-          setTasks([])
-          setAskState(null)
-          setAgents([])
-          if (payload.model) {
-            setCurrentModel(payload.model)
-            currentModelName = payload.model.name
-          }
-          if (payload.thinkingLevel) setThinkingLevelState(payload.thinkingLevel)
-          setHasMoreHistoryBefore(false)
-          setHistoryBeforeEntryId(null)
-          setContextPercent(null)
-          setWorkspaceSummary(null)
-        })
-
-        const summaryCwd = payload.cwd
-        window.openpi
-          .getWorkspaceSummary(summaryCwd)
-          .then((info) => {
-            if (ready()?.cwd !== summaryCwd) return
-            setWorkspaceSummary(info)
-            setGitBranch(info.branch)
-          })
-          .catch(() => {
-            if (ready()?.cwd !== summaryCwd) return
-            setWorkspaceSummary(null)
-            setGitBranch(null)
-          })
-
-        if (payload.sessionFile) {
-          const sessionFile = payload.sessionFile
-          window.openpi
-            .getSessionMessages(sessionFile, { limit: HISTORY_PAGE_LIMIT })
-            .then((page) => {
-              if (latestSessionFile !== sessionFile) return
-              batch(() => {
-                setMessages(page.messages)
-                setHasMoreHistoryBefore(page.hasMoreBefore)
-                setHistoryBeforeEntryId(page.nextBeforeEntryId)
-              })
-            })
-            .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
-        }
-
-        void loadSessionIndex(payload.cwd)
-        void refreshContextUsage()
-      })
-    )
+    unsubs.push(window.openpi.onSessionReady(applySessionReady))
 
     unsubs.push(
       window.openpi.onSessionError((err) => {
@@ -370,8 +370,21 @@ export function useOpenPiSession() {
 
   const openWorkspace = async () => {
     setError(null)
-    await window.openpi.pickWorkspace()
-    await loadSessionIndex()
+    const result = await window.openpi.pickWorkspace()
+    if (result.cancelled) return
+
+    if (result.path) {
+      applySessionReady({
+        cwd: result.path,
+        sessionFile: null,
+        sessionId: null,
+        sessionName: null,
+        model: null,
+        thinkingLevel: null,
+      })
+    } else {
+      await loadSessionIndex()
+    }
   }
 
   const openExistingSession = async (session: SessionListItem) => {

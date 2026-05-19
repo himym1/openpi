@@ -1,6 +1,7 @@
 import fuzzysort from 'fuzzysort'
 import { Archive, Check, Plus, RotateCcw, Search, Trash2 } from 'lucide-solid'
 import { createMemo, createSignal, For, Show } from 'solid-js'
+import { t } from '../../lib/i18n'
 import type { ArchivedSessionItem, SessionListItem, WorkspaceInfo } from '../../lib/ipc'
 import { formatRelativeTime, groupSessions } from '../../lib/sessionView'
 import type { GroupMode, SortMode } from '../../types/session'
@@ -77,13 +78,13 @@ export function SessionSidebar(props: SessionSidebarProps) {
     <aside class="session-sidebar" style={props.style}>
       <div class="sidebar-header">
         <div class="sidebar-title-row">
-          <div class="eyebrow">Threads</div>
+          <div class="eyebrow">{t('sidebar.threads')}</div>
           <div class="sidebar-actions">
             <button
               type="button"
               class="icon-button"
               onClick={() => setSearchVisible((value) => !value)}
-              aria-label="Search threads"
+              aria-label={t('sidebar.searchThreads')}
             >
               <Search size={15} />
             </button>
@@ -100,8 +101,8 @@ export function SessionSidebar(props: SessionSidebarProps) {
               type="button"
               class={`icon-button${props.showArchived ? ' is-active' : ''}`}
               onClick={props.onToggleArchived}
-              title={`Archived threads${props.archivedSessions.length > 0 ? ` (${props.archivedSessions.length})` : ''}`}
-              aria-label="Archived threads"
+              title={`${t('sidebar.archivedThreads')}${props.archivedSessions.length > 0 ? ` (${props.archivedSessions.length})` : ''}`}
+              aria-label={t('sidebar.archivedThreads')}
             >
               <Archive size={15} />
             </button>
@@ -109,8 +110,8 @@ export function SessionSidebar(props: SessionSidebarProps) {
               type="button"
               class="icon-button no-drag"
               onClick={props.onNewSession}
-              title="New thread (⌘N)"
-              aria-label="New thread"
+              title={t('sidebar.newThreadShortcut')}
+              aria-label={t('sidebar.newThread')}
             >
               <Plus size={15} />
             </button>
@@ -123,7 +124,7 @@ export function SessionSidebar(props: SessionSidebarProps) {
             <input
               value={props.query}
               onInput={(event) => props.onQuery(event.currentTarget.value)}
-              placeholder="Search threads"
+              placeholder={t('sidebar.searchThreads')}
             />
           </label>
         </Show>
@@ -133,7 +134,7 @@ export function SessionSidebar(props: SessionSidebarProps) {
         <Show when={props.showArchived}>
           <section class="archived-section">
             <div class="archived-section-head">
-              <span>Archived</span>
+              <span>{t('sidebar.archived')}</span>
               <span class="archived-section-count">{props.archivedSessions.length}</span>
             </div>
             <Show
@@ -151,7 +152,7 @@ export function SessionSidebar(props: SessionSidebarProps) {
                       <button
                         type="button"
                         class="archived-restore-btn"
-                        title="Restore session"
+                        title={t('sidebar.restoreSession')}
                         onClick={() => props.onUnarchiveSession(item.archivedPath)}
                       >
                         <RotateCcw size={11} />
@@ -159,7 +160,7 @@ export function SessionSidebar(props: SessionSidebarProps) {
                       <button
                         type="button"
                         class="archived-delete-btn"
-                        title="Permanently delete session"
+                        title={t('sidebar.deleteSession')}
                         onClick={() => props.onDeleteArchivedSession(item.archivedPath)}
                       >
                         <Trash2 size={11} />
@@ -169,7 +170,7 @@ export function SessionSidebar(props: SessionSidebarProps) {
                 </For>
               }
             >
-              <div class="archived-empty">No archived sessions</div>
+              <div class="archived-empty">{t('sidebar.noArchivedSessions')}</div>
             </Show>
           </section>
         </Show>
@@ -177,7 +178,7 @@ export function SessionSidebar(props: SessionSidebarProps) {
         <Show when={pinnedItems().length > 0}>
           <section class="session-group pinned-section">
             <div class="session-group-header">
-              <span class="sg-label">Pinned</span>
+              <span class="sg-label">{t('sidebar.pinned')}</span>
             </div>
             <For each={pinnedItems()}>
               {(session) => (
@@ -195,9 +196,7 @@ export function SessionSidebar(props: SessionSidebarProps) {
         </Show>
 
         <Show when={grouped().length === 0 && pinnedItems().length === 0 && !props.showArchived}>
-          <div class="sidebar-empty">
-            No threads indexed yet. Start a prompt to create the first Pi thread.
-          </div>
+          <div class="sidebar-empty">{t('sidebar.noThreads')}</div>
         </Show>
 
         <For each={grouped()}>
@@ -223,7 +222,7 @@ export function SessionSidebar(props: SessionSidebarProps) {
                       <button
                         type="button"
                         class="sg-action-btn"
-                        title="Archive all"
+                        title={t('sidebar.archiveAll')}
                         onClick={() => props.onArchiveGroup(group.label, sessionPaths)}
                       >
                         <Check size={12} />
@@ -231,7 +230,7 @@ export function SessionSidebar(props: SessionSidebarProps) {
                       <button
                         type="button"
                         class="sg-action-btn"
-                        title="New session in this workspace"
+                        title={t('sidebar.newSessionInWorkspace')}
                         onClick={() => props.onNewSessionIn(group.key)}
                       >
                         <Plus size={12} />
@@ -258,8 +257,10 @@ export function SessionSidebar(props: SessionSidebarProps) {
                     class="sg-load-more-btn"
                     onClick={() => loadMore(group.key, group.sessions.length)}
                   >
-                    Load {Math.min(PAGE_SIZE_MORE, remaining())} more
-                    <span class="sg-load-more-rem">{remaining()} remaining</span>
+                    {t('sidebar.loadMore', { count: Math.min(PAGE_SIZE_MORE, remaining()) })}
+                    <span class="sg-load-more-rem">
+                      {t('sidebar.remaining', { count: remaining() })}
+                    </span>
                   </button>
                 </Show>
               </section>

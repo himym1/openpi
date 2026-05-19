@@ -8,6 +8,7 @@
 import { ArrowUp, ArrowUpDown, ChevronDown, GripVertical, Search, Sparkles } from 'lucide-solid'
 import { createEffect, createMemo, createSignal, For, onMount, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
+import { t } from '../../lib/i18n'
 import type {
   GitChangedFile,
   GitFileDiff,
@@ -490,14 +491,14 @@ export function GitPanel(props: GitPanelProps) {
               class={`git-panel-tab ${activeTab() === 'history' ? 'is-active' : ''}`}
               onClick={() => setActiveTab('history')}
             >
-              History
+              {t('git.history')}
             </button>
             <button
               type="button"
               class={`git-panel-tab ${activeTab() === 'changes' ? 'is-active' : ''}`}
               onClick={() => setActiveTab('changes')}
             >
-              Changes
+              {t('git.changes')}
               <Show when={totalChanged() > 0}>
                 <span class="git-panel-tab-count">{totalChanged()}</span>
               </Show>
@@ -569,21 +570,24 @@ export function GitPanel(props: GitPanelProps) {
               </button>
             </div>
           </Show>
-          <Show when={status()} fallback={<div class="git-panel-empty">Loading git status…</div>}>
+          <Show
+            when={status()}
+            fallback={<div class="git-panel-empty">{t('git.loadingStatus')}</div>}
+          >
             <Show when={!showingAgentFiles() && totalChanged() === 0}>
-              <div class="git-panel-empty">No changes to commit</div>
+              <div class="git-panel-empty">{t('git.noChanges')}</div>
             </Show>
 
             <Show when={showingAgentFiles() || totalChanged() > 0}>
               <Show when={stageableFiles().length > 0}>
                 <div class="git-worktree-actions">
-                  <span>{stageableFiles().length} unstaged</span>
+                  <span>{t('git.unstagedCount', { count: stageableFiles().length })}</span>
                   <button
                     type="button"
                     class="git-stage-all-btn"
                     onClick={() => void handleStageAll()}
                   >
-                    Stage All
+                    {t('git.stageAll')}
                   </button>
                 </div>
               </Show>
@@ -597,14 +601,14 @@ export function GitPanel(props: GitPanelProps) {
               <Show when={showingAgentFiles() && pinnedAgentFiles().length > 0}>
                 <section class="git-section git-section--agent">
                   <div class="git-section-title">
-                    <span>✨ Agent Changed</span>
+                    <span>✨ {t('git.agentChanged')}</span>
                     <span class="git-section-count">{pinnedAgentFiles().length}</span>
                     <button
                       type="button"
                       class="git-show-all-btn"
                       onClick={() => setShowingAgentChanges(false)}
                     >
-                      Show all changes
+                      {t('git.showAllChanges')}
                     </button>
                   </div>
                   <For each={pinnedAgentFiles()}>
@@ -623,7 +627,7 @@ export function GitPanel(props: GitPanelProps) {
               <Show when={conflictFiles().length > 0}>
                 <section class="git-section git-section--conflicts">
                   <div class="git-section-title">
-                    Conflicts
+                    {t('git.conflicts')}
                     <span class="git-section-count">{conflictFiles().length}</span>
                   </div>
                   <For each={conflictFiles()}>
@@ -642,7 +646,7 @@ export function GitPanel(props: GitPanelProps) {
               <Show when={stagedFiles().length > 0}>
                 <section class="git-section">
                   <div class="git-section-title">
-                    Staged
+                    {t('git.staged')}
                     <span class="git-section-count">{stagedFiles().length}</span>
                   </div>
                   <For each={stagedFiles()}>
@@ -661,7 +665,7 @@ export function GitPanel(props: GitPanelProps) {
               <Show when={unstagedFiles().length > 0}>
                 <section class="git-section">
                   <div class="git-section-title">
-                    Changes
+                    {t('git.changes')}
                     <span class="git-section-count">{unstagedFiles().length}</span>
                   </div>
                   <For each={unstagedFiles()}>
@@ -680,7 +684,7 @@ export function GitPanel(props: GitPanelProps) {
               <Show when={untrackedFiles().length > 0}>
                 <section class="git-section">
                   <div class="git-section-title">
-                    Untracked
+                    {t('git.untracked')}
                     <span class="git-section-count">{untrackedFiles().length}</span>
                   </div>
                   <For each={untrackedFiles()}>
@@ -703,7 +707,7 @@ export function GitPanel(props: GitPanelProps) {
               <div class="git-commit-composer">
                 <textarea
                   class="git-commit-input"
-                  placeholder="Enter commit message"
+                  placeholder={t('git.commitPlaceholder')}
                   value={commitMessage()}
                   onInput={(e) => setCommitMessage(e.currentTarget.value)}
                   rows={4}
@@ -714,8 +718,8 @@ export function GitPanel(props: GitPanelProps) {
                     <button
                       type="button"
                       class="git-generate-msg-btn"
-                      title="Generate commit message from staged diff"
-                      aria-label="Generate commit message from staged diff"
+                      title={t('git.generateCommitMessage')}
+                      aria-label={t('git.generateCommitMessage')}
                       disabled={isGeneratingMsg() || isCommitting()}
                       onClick={() => void handleGenerateCommitMessage()}
                     >
@@ -734,8 +738,8 @@ export function GitPanel(props: GitPanelProps) {
                       type="button"
                       class={`git-icon-btn${syncMenuOpen() ? ' is-active' : ''}`}
                       disabled={syncBlocked()}
-                      title={syncingAction() ? 'Syncing…' : 'Sync remote'}
-                      aria-label="Sync with remote"
+                      title={syncingAction() ? t('git.syncing') : t('git.syncRemote')}
+                      aria-label={t('git.syncRemote')}
                       aria-expanded={syncMenuOpen()}
                       onClick={() => {
                         const rect = syncBtnRef?.getBoundingClientRect() ?? null
@@ -769,7 +773,7 @@ export function GitPanel(props: GitPanelProps) {
                               }}
                               disabled={syncBlocked()}
                             >
-                              Fetch
+                              {t('git.fetch')}
                             </button>
                             <button
                               type="button"
@@ -779,7 +783,7 @@ export function GitPanel(props: GitPanelProps) {
                               }}
                               disabled={syncBlocked() || !status()?.upstream || totalChanged() > 0}
                             >
-                              Pull
+                              {t('git.pull')}
                             </button>
                             <button
                               type="button"
@@ -789,7 +793,7 @@ export function GitPanel(props: GitPanelProps) {
                               }}
                               disabled={syncBlocked() || !status()?.upstream || totalChanged() > 0}
                             >
-                              Pull (Rebase)
+                              {t('git.pullRebase')}
                             </button>
                             <button
                               type="button"
@@ -799,7 +803,7 @@ export function GitPanel(props: GitPanelProps) {
                               }}
                               disabled={syncBlocked() || !status()?.upstream}
                             >
-                              Push
+                              {t('git.push')}
                             </button>
                             <button
                               type="button"
@@ -822,17 +826,17 @@ export function GitPanel(props: GitPanelProps) {
                       disabled={isCommitting() || !commitMessage().trim()}
                     >
                       {isCommitting()
-                        ? 'Committing…'
+                        ? t('git.committing')
                         : commitAmend()
-                          ? 'Amend Staged'
-                          : 'Commit Staged'}
+                          ? t('git.amendStaged')
+                          : t('git.commitStaged')}
                     </button>
                     <button
                       type="button"
                       class={`git-commit-mode-menu-btn ${commitOptionsOpen() ? 'is-active' : ''}`}
                       disabled={isCommitting() || !commitMessage().trim()}
-                      title="Commit options"
-                      aria-label="Commit options"
+                      title={t('git.commitOptions')}
+                      aria-label={t('git.commitOptions')}
                       aria-expanded={commitOptionsOpen()}
                       onClick={() => setCommitOptionsOpen((open) => !open)}
                     >
@@ -867,8 +871,8 @@ export function GitPanel(props: GitPanelProps) {
                       class="git-commit-push-btn"
                       onClick={() => void handleCommit(true)}
                       disabled={isCommitting() || !commitMessage().trim()}
-                      title="Commit and push"
-                      aria-label="Commit and push"
+                      title={t('git.commitAndPush')}
+                      aria-label={t('git.commitAndPush')}
                     >
                       <ArrowUp size={14} />
                     </button>

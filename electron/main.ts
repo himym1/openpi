@@ -986,11 +986,10 @@ function registerHandlers(): void {
       return { cancelled: true }
     }
     const workspacePath = result.filePaths[0]
-    try {
-      await startSession(workspacePath)
-    } catch (err) {
-      emitSessionError(err instanceof Error ? err.message : String(err))
-    }
+    // Show the chosen workspace immediately. Starting the Pi SDK session can
+    // block on sidecar/model/provider/resource initialization; deferring it
+    // prevents the renderer from appearing stuck after the native picker closes.
+    showDeferredWorkspace(workspacePath)
     return { cancelled: false, path: workspacePath }
   })
 

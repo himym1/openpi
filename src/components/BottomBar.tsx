@@ -10,6 +10,7 @@ import {
   SquareTerminal,
 } from 'lucide-solid'
 import { createSignal, Show } from 'solid-js'
+import { t } from '../lib/i18n'
 import type { AppUpdateStatus } from '../lib/ipc'
 import { ChangelogModal } from './ChangelogModal'
 
@@ -60,13 +61,13 @@ export function BottomBar(props: BottomBarProps) {
   const syncActionLabel = () => {
     switch (props.gitSyncAction) {
       case 'fetch':
-        return 'Fetching…'
+        return t('git.fetching')
       case 'pull':
-        return 'Pulling…'
+        return t('git.pulling')
       case 'pull-rebase':
-        return 'Pulling (rebase)…'
+        return t('git.pullingRebase')
       case 'push':
-        return 'Pushing…'
+        return t('git.pushing')
       default:
         return null
     }
@@ -88,7 +89,7 @@ export function BottomBar(props: BottomBarProps) {
             type="button"
             class={`bottom-bar-btn${props.leftDrawerOpen && props.leftDrawerMode === 'workspace' ? ' is-active' : ''}`}
             onClick={props.onToggleWorkspace}
-            title="Show workspaces"
+            title={t('bottom.showWorkspaces')}
             aria-pressed={props.leftDrawerOpen && props.leftDrawerMode === 'workspace'}
           >
             <Folder size={13} />
@@ -97,7 +98,7 @@ export function BottomBar(props: BottomBarProps) {
             type="button"
             class={`bottom-bar-btn${props.leftDrawerOpen && props.leftDrawerMode === 'stories' ? ' is-active' : ''}`}
             onClick={props.onToggleStories}
-            title="Show stories"
+            title={t('bottom.showStories')}
             aria-pressed={props.leftDrawerOpen && props.leftDrawerMode === 'stories'}
           >
             <BookOpen size={13} />
@@ -106,8 +107,8 @@ export function BottomBar(props: BottomBarProps) {
             type="button"
             class={`bottom-bar-btn${props.leftDrawerOpen && props.leftDrawerMode === 'tree' ? ' is-active' : ''}`}
             onClick={props.onToggleTree}
-            title="Show session map"
-            aria-label="Show session map"
+            title={t('bottom.showSessionMap')}
+            aria-label={t('bottom.showSessionMap')}
             aria-pressed={props.leftDrawerOpen && props.leftDrawerMode === 'tree'}
           >
             <GitFork size={13} />
@@ -116,7 +117,7 @@ export function BottomBar(props: BottomBarProps) {
             type="button"
             class={`bottom-bar-btn${props.leftDrawerOpen && props.leftDrawerMode === 'threads' ? ' is-active' : ''}`}
             onClick={props.onToggleThreads}
-            title="Show thread history (⌘B)"
+            title={t('bottom.showThreadHistory')}
             aria-pressed={props.leftDrawerOpen && props.leftDrawerMode === 'threads'}
           >
             <MessageSquareText size={13} />
@@ -124,7 +125,7 @@ export function BottomBar(props: BottomBarProps) {
           <button
             type="button"
             class="bottom-bar-btn"
-            title="What's new"
+            title={t('bottom.whatsNew')}
             onClick={() => setChangelogOpen(true)}
           >
             <FileText size={13} />
@@ -142,7 +143,7 @@ export function BottomBar(props: BottomBarProps) {
                   <button
                     type="button"
                     class="bottom-bar-version"
-                    title="Check for updates"
+                    title={t('bottom.checkForUpdates')}
                     onClick={() => {
                       void window.openpi.appUpdate.check().then(setUpdateStatus)
                     }}
@@ -159,8 +160,8 @@ export function BottomBar(props: BottomBarProps) {
                 >
                   <ArrowUpCircle size={11} />
                   {updateCommandCopied()
-                    ? 'Copied brew command'
-                    : (updateStatus()?.latestVersion ?? 'Update available')}
+                    ? t('bottom.copiedBrewCommand')
+                    : (updateStatus()?.latestVersion ?? t('bottom.updateAvailable'))}
                 </button>
               </Show>
             }
@@ -180,15 +181,15 @@ export function BottomBar(props: BottomBarProps) {
         {/* Right: panel toggles — git, file tree, terminal */}
         <div class="bottom-bar-right">
           <Show when={props.isStreaming}>
-            <span class="bottom-bar-status-pill is-live" title="Agent running">
-              running
+            <span class="bottom-bar-status-pill is-live" title={t('bottom.agentRunning')}>
+              {t('bottom.running')}
             </span>
           </Show>
           <button
             type="button"
             class={`bottom-bar-btn${props.gitPanelOpen ? ' is-active' : ''}`}
             onClick={props.onToggleGitPanel}
-            title="Toggle source control panel"
+            title={t('bottom.toggleSourceControl')}
             aria-pressed={props.gitPanelOpen}
           >
             <GitBranch size={13} />
@@ -197,7 +198,7 @@ export function BottomBar(props: BottomBarProps) {
             type="button"
             class={`bottom-bar-btn${props.filePanelOpen ? ' is-active' : ''}`}
             onClick={props.onToggleFilePanel}
-            title="Toggle file tree panel"
+            title={t('bottom.toggleFileTree')}
             aria-pressed={props.filePanelOpen}
           >
             <FolderTree size={13} />
@@ -206,7 +207,7 @@ export function BottomBar(props: BottomBarProps) {
             type="button"
             class={`bottom-bar-btn${props.terminalOpen ? ' is-active' : ''}`}
             onClick={props.onToggleTerminal}
-            title="Toggle terminal (⌘J)"
+            title={t('bottom.toggleTerminal')}
             aria-pressed={props.terminalOpen}
           >
             <SquareTerminal size={13} />

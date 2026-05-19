@@ -33,6 +33,7 @@ import {
   findFileMentionTrigger,
   removeFileMentionToken,
 } from '../lib/fileMentions'
+import { t } from '../lib/i18n'
 import type { FffFileResult, ModelInfo, SkillItem } from '../lib/ipc'
 import {
   buildKeybindingEntries,
@@ -640,6 +641,15 @@ export const Composer: Component<ComposerProps> = (props) => {
   const [slashActiveIdx, setSlashActiveIdx] = createSignal(0)
   const [promptCommands, setPromptCommands] = createSignal<SlashCommand[]>([])
 
+  // ─ Skill picker state ─────────────────────────────────────────────────────
+  // Declared before slash-command memos because /skill:<name> commands are part
+  // of the slash command list and Solid can evaluate those memos during mount.
+  const [skillOpen, setSkillOpen] = createSignal(false)
+  const [skillQuery, setSkillQuery] = createSignal('')
+  const [skillActiveIdx, setSkillActiveIdx] = createSignal(0)
+  const [allSkills, setAllSkills] = createSignal<SkillItem[]>([])
+  const [skillsLoaded, setSkillsLoaded] = createSignal(false)
+
   // Load prompt templates (merged with built-ins for the combined command list)
   createEffect(() => {
     const currentCwd = props.cwd
@@ -669,10 +679,21 @@ export const Composer: Component<ComposerProps> = (props) => {
     },
   ]
 
-  // All commands: built-ins first, then prompts sorted alphabetically
+  const skillCommands = createMemo<SlashCommand[]>(() =>
+    allSkills()
+      .map((skill) => ({
+        name: `/skill:${skill.name}`,
+        description: skill.description,
+        argHint: '<task>',
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  )
+
+  // All commands: built-ins first, then prompts and skill commands sorted alphabetically
   const allCommands = createMemo<SlashCommand[]>(() => [
     ...BUILT_IN_SLASH_COMMANDS,
     ...promptCommands(),
+    ...skillCommands(),
   ])
 
   const filteredCmds = createMemo<SlashCommand[]>(() => {
@@ -789,16 +810,10 @@ export const Composer: Component<ComposerProps> = (props) => {
     })
   }
 
-  // ─ Skill picker state ─────────────────────────────────────────────────────
-  const [skillOpen, setSkillOpen] = createSignal(false)
-  const [skillQuery, setSkillQuery] = createSignal('')
-  const [skillActiveIdx, setSkillActiveIdx] = createSignal(0)
-  const [allSkills, setAllSkills] = createSignal<SkillItem[]>([])
-  const [skillsLoaded, setSkillsLoaded] = createSignal(false)
-
-  // Lazy-load skills when skill picker first opens
+  // Lazy-load skills when skill or slash picker first opens. Slash menu includes
+  // /skill:<name> commands for parity with Pi runtime command discovery.
   createEffect(() => {
-    if (skillOpen() && !skillsLoaded()) {
+    if ((skillOpen() || slashOpen()) && !skillsLoaded()) {
       void window.openpi
         .listSkills()
         .then((skills) => {
@@ -1024,7 +1039,7 @@ export const Composer: Component<ComposerProps> = (props) => {
         </Show>
 
         {/* ── Slash command picker — floats above composer box ───────────── */}
-        <Show when={slashOpen() && filteredCmds().length > 0}>
+        <Show when={slashOpen() && filteredCmds().length > 0 && !skillOpen()}>
           <SlashCommandPicker
             commands={filteredCmds()}
             activeIdx={slashActiveIdx()}
@@ -1048,16 +1063,15 @@ export const Composer: Component<ComposerProps> = (props) => {
           <div class="pending-queue">
             <div class="pending-queue-header">
               <span class="pending-queue-count">
-                Queued · {props.steeringQueue.length + props.followUpQueue.length}
+                {t('composer.queued', {
+                  count: props.steeringQueue.length + props.followUpQueue.length,
+                })}
               </span>
             </div>
             <For each={props.steeringQueue}>
               {(item) => (
                 <div class="pq-row">
-                  <span
-                    class="pq-badge pq-badge--steer"
-                    title="Interrupt — injected after current tool calls"
-                  >
+                  <span class="pq-badge pq-badge--steer" title={t('composer.interruptTitle')}>
                     <Zap size={10} />
                   </span>
                   <span class="pq-text" title={item}>
@@ -1069,10 +1083,7 @@ export const Composer: Component<ComposerProps> = (props) => {
             <For each={props.followUpQueue}>
               {(item) => (
                 <div class="pq-row">
-                  <span
-                    class="pq-badge pq-badge--followup"
-                    title="Queue — delivered when agent fully stops"
-                  >
+                  <span class="pq-badge pq-badge--followup" title={t('composer.queueTitle')}>
                     <Clock size={10} />
                   </span>
                   <span class="pq-text" title={item}>
@@ -1132,14 +1143,14 @@ export const Composer: Component<ComposerProps> = (props) => {
           <Show when={shellMode()}>
             <div class="composer-shell-banner">
               <span class="composer-shell-label">
-                <TerminalSquare size={13} /> Shell
+                <TerminalSquare size={13} /> {t('composer.shell')}
               </span>
               <button
                 type="button"
                 class="composer-shell-cancel"
                 onClick={() => setShellMode(false)}
               >
-                Cancel
+                {t('composer.cancel')}
               </button>
             </div>
           </Show>
@@ -1152,14 +1163,14 @@ export const Composer: Component<ComposerProps> = (props) => {
             rows={1}
             placeholder={
               shellMode()
-                ? 'Enter shell command…'
+                ? t('composer.enterShellCommand')
                 : props.isStreaming
                   ? props.queueMode === 'steer'
-                    ? 'Interrupt Pi after current tool calls…'
+                    ? t('composer.interruptPlaceholder')
                     : props.queueMode === 'followup'
-                      ? 'Queue message for when Pi finishes…'
-                      : 'Message Pi…'
-                  : `Ask Pi about ${props.workspaceName}…`
+                      ? t('composer.queuePlaceholder')
+                      : t('composer.messagePi')
+                  : t('composer.askAbout', { name: props.workspaceName })
             }
             value={props.input}
             onInput={(event) => {
@@ -1184,7 +1195,8 @@ export const Composer: Component<ComposerProps> = (props) => {
                 if (skillOpen()) setSkillOpen(false)
               }
 
-              // Skill picker: /skill:<query> takes priority over slash picker
+              // Skill picker: /skill:<query> takes priority over slash picker.
+              // Bare /skill still uses the slash menu so users can discover /skill:<name> entries.
               const skillMatch = mention ? null : /^\/skill:([\w-]*)$/.exec(val)
               // Slash command detection: entire input is exactly /<query>
               const slashMatch = !mention && !skillMatch ? /^\/([-\w]*)$/.exec(val) : null
@@ -1387,8 +1399,8 @@ export const Composer: Component<ComposerProps> = (props) => {
                     setModelOpen(false)
                     setThinkingOpen(false)
                   }}
-                  title="Add context file (⌘/)"
-                  aria-label="Add context file"
+                  title={t('composer.addContextFileShortcut')}
+                  aria-label={t('composer.addContextFile')}
                 >
                   <Paperclip size={13} strokeWidth={2} />
                 </button>
@@ -1422,9 +1434,11 @@ export const Composer: Component<ComposerProps> = (props) => {
                     setPickerOpen(false)
                     if (!modelOpen()) setTimeout(() => modelSearchRef?.focus(), 30)
                   }}
-                  title="Select model"
+                  title={t('composer.selectModel')}
                 >
-                  <span class="composer-tool-label">{props.currentModel?.name ?? 'No model'}</span>
+                  <span class="composer-tool-label">
+                    {props.currentModel?.name ?? t('composer.noModel')}
+                  </span>
                   <ChevronDown size={11} strokeWidth={2} />
                 </button>
 
@@ -1437,7 +1451,7 @@ export const Composer: Component<ComposerProps> = (props) => {
                             modelSearchRef = el
                           }}
                           class="cmd-search"
-                          placeholder="Search models"
+                          placeholder={t('composer.searchModels')}
                           value={modelSearch()}
                           onInput={(e) => setModelSearch(e.currentTarget.value)}
                         />
@@ -1446,7 +1460,7 @@ export const Composer: Component<ComposerProps> = (props) => {
                       <button
                         type="button"
                         class="cmd-icon-btn"
-                        title="Connect provider"
+                        title={t('composer.connectProvider')}
                         onClick={() => {
                           setModelOpen(false)
                           props.onConnectProvider()
@@ -1458,7 +1472,7 @@ export const Composer: Component<ComposerProps> = (props) => {
                       <button
                         type="button"
                         class="cmd-icon-btn"
-                        title="Manage models"
+                        title={t('composer.manageModels')}
                         onClick={() => {
                           setModelOpen(false)
                           props.onManageModels()
@@ -1492,7 +1506,7 @@ export const Composer: Component<ComposerProps> = (props) => {
                     </For>
 
                     <Show when={filteredModels().length === 0}>
-                      <div class="cmd-empty">No models match</div>
+                      <div class="cmd-empty">{t('composer.noModelsMatch')}</div>
                     </Show>
                   </div>
                 </Show>
@@ -1513,7 +1527,7 @@ export const Composer: Component<ComposerProps> = (props) => {
                     setModelOpen(false)
                     setPickerOpen(false)
                   }}
-                  title="Thinking level"
+                  title={t('composer.thinkingLevel')}
                 >
                   <span class="composer-tool-label">{props.thinkingLevel}</span>
                   <ChevronDown size={11} strokeWidth={2} />
@@ -1555,11 +1569,11 @@ export const Composer: Component<ComposerProps> = (props) => {
                     type="button"
                     class={`delivery-btn${props.queueMode === 'steer' ? ' is-on' : ''}`}
                     onClick={() => props.onQueueMode((m) => (m === 'steer' ? 'prompt' : 'steer'))}
-                    title="Interrupt — injected after current tool calls, before next LLM call"
+                    title={t('composer.interruptTitle')}
                     aria-pressed={props.queueMode === 'steer'}
                   >
                     <Zap size={11} />
-                    <span>Interrupt</span>
+                    <span>{t('composer.interrupt')}</span>
                   </button>
                   <button
                     type="button"
@@ -1567,11 +1581,11 @@ export const Composer: Component<ComposerProps> = (props) => {
                     onClick={() =>
                       props.onQueueMode((m) => (m === 'followup' ? 'prompt' : 'followup'))
                     }
-                    title="Queue — delivered when agent fully stops"
+                    title={t('composer.queueTitle')}
                     aria-pressed={props.queueMode === 'followup'}
                   >
                     <Clock size={11} />
-                    <span>Queue</span>
+                    <span>{t('composer.queue')}</span>
                   </button>
                 </div>
 
@@ -1583,8 +1597,10 @@ export const Composer: Component<ComposerProps> = (props) => {
                       props.queueMode === 'steer' ? ' is-steer' : ' is-followup'
                     }`}
                     onClick={() => props.onQueueMode('prompt')}
-                    title={`Reset to normal prompt mode (${props.queueMode === 'steer' ? 'Alt+↑' : 'Alt+↓'} to re-activate)`}
-                    aria-label="Reset delivery mode to normal"
+                    title={t('composer.resetDeliveryTitle', {
+                      shortcut: props.queueMode === 'steer' ? 'Alt+↑' : 'Alt+↓',
+                    })}
+                    aria-label={t('composer.resetDelivery')}
                   >
                     <RotateCcw size={11} strokeWidth={2} />
                   </button>
@@ -1608,7 +1624,7 @@ export const Composer: Component<ComposerProps> = (props) => {
                           props.lineComments.length === 0 &&
                           props.loadedSkills.length === 0
                     }
-                    title={shellMode() ? 'Run shell command (Enter)' : 'Send (Enter)'}
+                    title={shellMode() ? t('composer.runShell') : t('composer.send')}
                   >
                     <ArrowUp size={14} strokeWidth={2.5} />
                   </button>
@@ -1619,7 +1635,7 @@ export const Composer: Component<ComposerProps> = (props) => {
                   type="button"
                   class="composer-stop-btn"
                   onClick={props.onAbort}
-                  title="Stop agent"
+                  title={t('composer.stopAgent')}
                 >
                   <Square size={13} strokeWidth={2} />
                 </button>
@@ -1630,14 +1646,14 @@ export const Composer: Component<ComposerProps> = (props) => {
 
         <p class="composer-hint">
           {shellMode()
-            ? 'enter to run shell · esc cancel · ⌘⇧X shell mode'
+            ? t('composer.shellHint')
             : props.isStreaming && !shellMode()
               ? props.queueMode === 'steer'
-                ? 'interrupt mode · injects after tool calls · enter to send · alt+enter switch'
+                ? t('composer.steerHint')
                 : props.queueMode === 'followup'
-                  ? 'queue mode · delivers when agent stops · enter to send · alt+enter switch'
-                  : 'enter to send · alt+enter switch delivery mode'
-              : 'enter to send · shift+enter new line · ↑ recall last · ⌘/ add context · ⌘⇧X shell'}
+                  ? t('composer.followupHint')
+                  : t('composer.streamingHint')
+              : t('composer.defaultHint')}
         </p>
       </div>
     </div>

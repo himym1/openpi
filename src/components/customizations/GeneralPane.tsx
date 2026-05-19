@@ -17,6 +17,13 @@ import {
   type DisplayPreferences,
   loadDisplayPreferences,
 } from '../../lib/displayPreferences'
+import {
+  languagePreference,
+  loadLanguagePreference,
+  saveLanguagePreference,
+  t,
+  type UiLanguagePreference,
+} from '../../lib/i18n'
 import type { CustomizationItem, PiUpdateCheckResult } from '../../lib/ipc'
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
@@ -54,6 +61,7 @@ type SavedKey =
   | SoundPreferenceKey
   | UpdatePreferenceKey
   | keyof AppearancePreferences
+  | 'language'
   | 'theme'
   | 'diagnostics'
   | 'checkPiUpdate'
@@ -88,6 +96,9 @@ export function GeneralPane(props: GeneralPaneProps) {
   const [appearance, setAppearance] = createSignal<AppearancePreferences>({
     ...DEFAULT_APPEARANCE_PREFERENCES,
   })
+  const [selectedLanguage, setSelectedLanguage] = createSignal<UiLanguagePreference>(
+    languagePreference()
+  )
   const [activeTheme, setActiveTheme] = createSignal(THEME_DEFAULT)
   const [openSoundMenu, setOpenSoundMenu] = createSignal<SoundPreferenceKey | null>(null)
   const [savedKey, setSavedKey] = createSignal<SavedKey | null>(null)
@@ -101,6 +112,7 @@ export function GeneralPane(props: GeneralPaneProps) {
       loadSoundPreferences(),
       loadUpdatePreferences(),
       loadAppearancePreferences(),
+      loadLanguagePreference(),
       window.openpi.getSettings(),
     ])
       .then(
@@ -110,6 +122,7 @@ export function GeneralPane(props: GeneralPaneProps) {
           soundPreferences,
           updatePreferences,
           appearancePrefs,
+          languagePref,
           settings,
         ]) => {
           setPrefs(displayPrefs)
@@ -117,6 +130,7 @@ export function GeneralPane(props: GeneralPaneProps) {
           setSoundPrefs(soundPreferences)
           setUpdatePrefs(updatePreferences)
           setAppearance(appearancePrefs)
+          setSelectedLanguage(languagePref)
           applyAppearancePreferences(appearancePrefs)
           const theme = (settings.effective as Record<string, unknown>)?.theme
           setActiveTheme(typeof theme === 'string' && theme ? theme : THEME_DEFAULT)
@@ -313,6 +327,13 @@ export function GeneralPane(props: GeneralPaneProps) {
     saveAppearance(key, DEFAULT_APPEARANCE_PREFERENCES[key])
   }
 
+  const saveLanguage = (value: UiLanguagePreference) => {
+    setSelectedLanguage(value)
+    void saveLanguagePreference(value)
+      .then(() => markSaved('language'))
+      .catch((err) => props.onError(err instanceof Error ? err.message : String(err)))
+  }
+
   const themeOptions = createMemo(() => {
     const customThemes = props.themeItems
       .filter((item) => item.name !== 'dark' && item.name !== 'light')
@@ -412,7 +433,7 @@ export function GeneralPane(props: GeneralPaneProps) {
       <Show when={!loading()} fallback={<div class="osp-loading">Loading…</div>}>
         <div class="osp-scroll">
           <section class="osp-section">
-            <div class="osp-section-head">Appearance</div>
+            <div class="osp-section-head">{t('settings.appearance')}</div>
             <For each={appearanceRows()}>
               {(field) => {
                 const isDefault = () => field.value === field.defaultValue
@@ -424,7 +445,7 @@ export function GeneralPane(props: GeneralPaneProps) {
                         {field.label}
                         <Show when={justSaved()}>
                           <span class="osp-saved">
-                            <Check size={10} /> saved
+                            <Check size={10} /> {t('common.saved')}
                           </span>
                         </Show>
                       </div>
@@ -436,7 +457,7 @@ export function GeneralPane(props: GeneralPaneProps) {
                           class="osp-reset-btn"
                           type="button"
                           onClick={() => resetAppearance(field.key)}
-                          title="Reset to default"
+                          title={t('common.resetToDefault')}
                         >
                           <RotateCcw size={11} />
                         </button>
@@ -474,6 +495,32 @@ export function GeneralPane(props: GeneralPaneProps) {
                 )
               }}
             </For>
+            <div class="osp-row">
+              <div class="osp-row-left">
+                <div class="osp-row-name">
+                  {t('settings.language')}
+                  <Show when={savedKey() === 'language'}>
+                    <span class="osp-saved">
+                      <Check size={10} /> {t('common.saved')}
+                    </span>
+                  </Show>
+                </div>
+                <div class="osp-row-desc">{t('settings.languageDescription')}</div>
+              </div>
+              <div class="osp-row-right">
+                <select
+                  class="osp-select"
+                  value={selectedLanguage()}
+                  onChange={(event) =>
+                    saveLanguage(event.currentTarget.value as UiLanguagePreference)
+                  }
+                >
+                  <option value="system">{t('common.system')}</option>
+                  <option value="en">{t('common.english')}</option>
+                  <option value="zh-CN">{t('common.simplifiedChinese')}</option>
+                </select>
+              </div>
+            </div>
             <div class="osp-row osp-row-last">
               <div class="osp-row-left">
                 <div class="osp-row-name">

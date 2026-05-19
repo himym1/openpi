@@ -1,20 +1,36 @@
 import logoUrl from '@icons/icon.svg'
-import { ExternalLink, FolderOpen } from 'lucide-solid'
+import { ExternalLink, FolderOpen, Loader2 } from 'lucide-solid'
 import { createEffect, createSignal, Show } from 'solid-js'
+import { t } from '../lib/i18n'
 
 type WelcomeProps = {
   appName: string
   appVersionLabel: string | null
   error: string | null
-  onOpen: () => void
+  onOpen: () => Promise<void> | void
 }
 
 export function Welcome(props: WelcomeProps) {
   const [firstRun, setFirstRun] = createSignal(false)
+  const [isOpening, setIsOpening] = createSignal(false)
+  const [openError, setOpenError] = createSignal<string | null>(null)
 
   createEffect(() => {
     void window.openpi.getFirstRun().then((isFirst) => setFirstRun(isFirst))
   })
+
+  const openWorkspace = async () => {
+    if (isOpening()) return
+    setIsOpening(true)
+    setOpenError(null)
+    try {
+      await props.onOpen()
+    } catch (err) {
+      setOpenError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsOpening(false)
+    }
+  }
 
   return (
     <div class="welcome-screen">
@@ -23,32 +39,26 @@ export function Welcome(props: WelcomeProps) {
         <span class="welcome-logo-scan" aria-hidden="true" />
       </div>
       <div class="eyebrow">{props.appName}</div>
-      <h1>A desktop workbench for Pi coding agent</h1>
-      <p>Local-first sessions, model controls, and recoverable agent state.</p>
+      <h1>{t('app.tagline')}</h1>
+      <p>{t('welcome.description')}</p>
 
       <Show when={firstRun()}>
         <div class="welcome-onboarding">
           <p class="welcome-onboarding-intro">
-            <strong>Getting started:</strong> Open a workspace directory to start a Pi session. Pi
-            reads your project files, responds to prompts, and edits code — all with full context of
-            your repository.
+            <strong>{t('welcome.gettingStartedLabel')}</strong> {t('welcome.gettingStartedIntro')}
           </p>
           <div class="welcome-onboarding-steps">
             <div class="welcome-step">
               <span class="welcome-step-num">1</span>
-              <span>
-                Click <strong>Open workspace</strong> and select your project folder
-              </span>
+              <span>{t('welcome.stepOpenWorkspace')}</span>
             </div>
             <div class="welcome-step">
               <span class="welcome-step-num">2</span>
-              <span>
-                Type <kbd>/goal</kbd> to set an objective, or just start chatting
-              </span>
+              <span>{t('welcome.stepSetGoal')}</span>
             </div>
             <div class="welcome-step">
               <span class="welcome-step-num">3</span>
-              <span>Review changes in the Git panel, then stage and commit</span>
+              <span>{t('welcome.stepReviewChanges')}</span>
             </div>
           </div>
           <div class="welcome-onboarding-links">
@@ -58,7 +68,7 @@ export function Welcome(props: WelcomeProps) {
               rel="noopener noreferrer"
               class="welcome-link"
             >
-              <ExternalLink size={13} /> Pi repo
+              <ExternalLink size={13} /> {t('welcome.piRepo')}
             </a>
             <a
               href="https://github.com/heyhuynhgiabuu/openpi"
@@ -66,20 +76,28 @@ export function Welcome(props: WelcomeProps) {
               rel="noopener noreferrer"
               class="welcome-link"
             >
-              <ExternalLink size={13} /> OpenPi source
+              <ExternalLink size={13} /> {t('welcome.openPiSource')}
             </a>
           </div>
         </div>
       </Show>
 
       <div class="welcome-actions">
-        <button type="button" class="button-primary" onClick={props.onOpen}>
-          <FolderOpen size={15} /> Open workspace
+        <button
+          type="button"
+          class="button-primary"
+          onClick={() => void openWorkspace()}
+          disabled={isOpening()}
+        >
+          <Show when={isOpening()} fallback={<FolderOpen size={15} />}>
+            <Loader2 size={15} class="spin" />
+          </Show>
+          {isOpening() ? t('welcome.openingWorkspace') : t('welcome.openWorkspace')}
         </button>
       </div>
 
-      <Show when={props.error}>
-        <div class="error-banner">{props.error}</div>
+      <Show when={openError() ?? props.error}>
+        {(message) => <div class="error-banner">{message()}</div>}
       </Show>
       <Show when={props.appVersionLabel}>
         {(versionLabel) => <span class="welcome-version">{versionLabel()}</span>}

@@ -27,12 +27,17 @@ Map product behavior to proof. Statuses: `planned`, `in_progress`, `implemented`
 | Harness | docs/stories/ has next-slice story packet | implemented | docs/stories/goal-status-indicator.md | |
 | IPC | Renderer never runs Git or filesystem | implemented | Preload boundary, contextIsolation, Zod validation | |
 | IPC | All IPC payloads validated by Zod | implemented | Schema definitions in ipc.ts | |
+| Workspace | Open Workspace reflects the selected workspace immediately without blocking on Pi sidecar session startup | implemented | `PICK_WORKSPACE` calls `showDeferredWorkspace()` in `electron/main.ts`; `npm run typecheck`; `npm run lint`; `npm test`; `npm run build` | Pi session still starts lazily on first prompt/new-session action |
+| Localization | UI language follows system and can be overridden in General settings | implemented | `src/lib/i18n.ts`; `src/components/customizations/GeneralPane.tsx`; `npm test -- tests/i18n.test.ts`; `npm run typecheck` | Initial slice covers high-frequency UI chrome with English fallback |
+| Localization | UI localization does not translate AI answers, session content, tool output bodies, or project data | implemented | i18n calls are limited to renderer chrome labels/placeholders; dynamic message, file, branch, model, and Git content remains data-driven | UI-only scope |
 | Tool Cards | `harness_status` shows doc counts | implemented | `parseHarnessOutputSummary` | |
 | Tool Cards | `harness_intake` shows classification/risk | implemented | `parseHarnessOutputSummary` | |
 | Tool Cards | `story_create` shows criteria count | implemented | `parseHarnessOutputSummary` | |
 | Tool Cards | `decision_record` shows status | implemented | `parseHarnessOutputSummary` | |
 | Tool Cards | `test_matrix_update` shows area/behavior | implemented | `parseHarnessOutputSummary` | |
 | Composer | `/goal` slash command is surfaced | implemented | Slash commands in Composer.tsx | |
+| Composer / Skills | Enabled skills are surfaced as `/skill:<name>` entries in the slash menu | implemented | `skillCommands` merged into `allCommands` in `src/components/Composer.tsx`; `npm run typecheck`; `npm run lint`; `npm test` | Preserves dedicated `/skill:<query>` picker |
+| Sidecar / Skills | Ordinary prompts are sent through Pi SDK prompt handling so extension commands, input transforms, `/skill:name`, and prompt templates remain SDK-owned | implemented | `buildSidecarPromptText` in `electron/piSidecar.ts` now owns only `/goal` and attached context prefixing; `npm run typecheck`; `npm run lint`; `npm test` | Retires duplicate sidecar skill/template expansion |
 | Palette | Goal loop palette entry exists | implemented | `goalLoop` in App.tsx | |
 | Extension | Extension typechecks with bundler resolution | implemented | CI verification command | |
 | UI | Harness tool cards show `legacy` badge | implemented | `harness-badge--legacy` in ToolCardView.tsx | |

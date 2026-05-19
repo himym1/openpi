@@ -1,5 +1,6 @@
 import { FolderOpen, FolderPlus, Plus } from 'lucide-solid'
 import { For, Show } from 'solid-js'
+import { t } from '../../lib/i18n'
 import type { WorkspaceInfo } from '../../lib/ipc'
 import { formatRelativeTime } from '../../lib/sessionView'
 
@@ -15,17 +16,17 @@ type WorkspacePaneProps = {
 
 export function WorkspacePane(props: WorkspacePaneProps) {
   return (
-    <aside class="workspace-pane" style={props.style} aria-label="Workspaces">
+    <aside class="workspace-pane" style={props.style} aria-label={t('workspace.workspaces')}>
       <header class="workspace-pane-header">
         <div>
-          <div class="eyebrow">Workspace</div>
-          <div class="workspace-pane-subtitle">Projects and recent roots</div>
+          <div class="eyebrow">{t('workspace.workspace')}</div>
+          <div class="workspace-pane-subtitle">{t('workspace.subtitle')}</div>
         </div>
         <button
           type="button"
           class="icon-button no-drag"
-          title="Open workspace"
-          aria-label="Open workspace"
+          title={t('workspace.openWorkspace')}
+          aria-label={t('workspace.openWorkspace')}
           onClick={props.onOpenWorkspace}
         >
           <FolderPlus size={15} />
@@ -35,7 +36,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
       <div class="workspace-pane-list">
         <For
           each={props.workspaces}
-          fallback={<div class="workspace-pane-empty">No workspaces indexed yet.</div>}
+          fallback={<div class="workspace-pane-empty">{t('workspace.noneIndexed')}</div>}
         >
           {(workspace) => {
             const isSelected = () => props.selectedPath === workspace.path
@@ -57,7 +58,7 @@ export function WorkspacePane(props: WorkspacePaneProps) {
                     <span class="workspace-card-name">{workspace.displayName}</span>
                     <span class="workspace-card-path">{workspace.path}</span>
                     <span class="workspace-card-meta">
-                      {workspace.sessionCount} thread{workspace.sessionCount === 1 ? '' : 's'}
+                      {t('workspace.threadCount', { count: workspace.sessionCount })}
                       <Show when={workspace.lastOpenedAt}>
                         {(lastOpenedAt) => <> · {formatRelativeTime(lastOpenedAt())}</>}
                       </Show>
@@ -67,8 +68,8 @@ export function WorkspacePane(props: WorkspacePaneProps) {
                 <button
                   type="button"
                   class="workspace-card-new"
-                  title="New thread in workspace"
-                  aria-label={`New thread in ${workspace.displayName}`}
+                  title={t('sidebar.newSessionInWorkspace')}
+                  aria-label={t('workspace.newThreadIn', { name: workspace.displayName })}
                   onClick={() => props.onNewSessionIn(workspace.path)}
                 >
                   <Plus size={14} />

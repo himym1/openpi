@@ -4,6 +4,7 @@ import { type Component, createEffect, createMemo, createSignal, Show } from 'so
 import { createStore, reconcile } from 'solid-js/store'
 import { VList, type VListHandle } from 'virtua/solid'
 import type { DisplayPreferences } from '../../lib/displayPreferences'
+import { t } from '../../lib/i18n'
 import type { SessionHistoryMessage, WorkspaceSummaryInfo } from '../../lib/ipc'
 import type { Message } from '../../types/session'
 import { AssistantMessageGroup, SystemMsg, UserMessage } from './Messages'
@@ -67,38 +68,38 @@ function getTopSpacing(items: RenderItem[], index: number): number {
 }
 
 function formatRelativeTime(value: string | null | undefined): string {
-  if (!value) return 'Unknown'
+  if (!value) return t('conversation.unknown')
 
   const timestamp = new Date(value).getTime()
-  if (!Number.isFinite(timestamp)) return 'Unknown'
+  if (!Number.isFinite(timestamp)) return t('conversation.unknown')
 
   const diffSeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000))
   const minute = 60
   const hour = minute * 60
   const day = hour * 24
 
-  if (diffSeconds < 45) return 'just now'
+  if (diffSeconds < 45) return t('time.justNow')
   if (diffSeconds < hour) {
     const minutes = Math.max(1, Math.round(diffSeconds / minute))
-    return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`
+    return t('time.minuteAgo', { count: minutes })
   }
   if (diffSeconds < day) {
     const hours = Math.max(1, Math.round(diffSeconds / hour))
-    return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`
+    return t('time.hourAgo', { count: hours })
   }
-  if (diffSeconds < day * 2) return 'yesterday'
+  if (diffSeconds < day * 2) return t('time.yesterday')
   if (diffSeconds < day * 30) {
     const days = Math.max(2, Math.round(diffSeconds / day))
-    return `${days} days ago`
+    return t('time.daysAgo', { count: days })
   }
 
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(timestamp))
 }
 
 function formatBranchLabel(branch: string | null | undefined): string {
-  if (!branch) return 'No git branch'
-  if (branch === 'main' || branch === 'master') return `Main branch (${branch})`
-  return `Branch ${branch}`
+  if (!branch) return t('conversation.noGitBranch')
+  if (branch === 'main' || branch === 'master') return t('conversation.mainBranch', { branch })
+  return t('conversation.branch', { branch })
 }
 
 type ConversationPaneProps = {
@@ -248,23 +249,27 @@ export const ConversationPane: Component<ConversationPaneProps> = (props) => {
 
       <div class="conversation-scroll">
         <Show when={props.displayPreferences.showSessionProgressBar && props.isStreaming}>
-          <div class="session-progress-bar" role="status" aria-label="Session is working" />
+          <div
+            class="session-progress-bar"
+            role="status"
+            aria-label={t('conversation.sessionWorking')}
+          />
         </Show>
 
         <Show
           when={props.messages.length > 0}
           fallback={
             <div class="empty-conversation">
-              <section class="empty-session-hero" aria-label="New session workspace summary">
+              <section class="empty-session-hero" aria-label={t('conversation.newSessionSummary')}>
                 <span class="empty-session-logo-frame" aria-hidden="true">
                   <img src={logoUrl} alt="" />
                 </span>
-                <h1 class="empty-session-title">Build anything your way</h1>
+                <h1 class="empty-session-title">{t('conversation.emptyTitle')}</h1>
                 <button
                   type="button"
                   class="empty-session-path-btn"
                   onClick={props.onOpenWorkspace}
-                  title={`Change workspace: ${workspacePath()}`}
+                  title={t('conversation.changeWorkspace', { path: workspacePath() })}
                 >
                   <FolderOpen size={14} />
                   <span>{workspacePath()}</span>
@@ -277,7 +282,8 @@ export const ConversationPane: Component<ConversationPaneProps> = (props) => {
                   <div class="empty-session-meta-row">
                     <Clock3 size={14} aria-hidden="true" />
                     <span>
-                      Last modified <strong>{formatRelativeTime(lastModifiedAt())}</strong>
+                      {t('conversation.lastModified')}{' '}
+                      <strong>{formatRelativeTime(lastModifiedAt())}</strong>
                     </span>
                   </div>
                 </div>
@@ -293,7 +299,9 @@ export const ConversationPane: Component<ConversationPaneProps> = (props) => {
                 disabled={props.isLoadingOlderHistory}
                 onClick={props.onLoadOlderHistory}
               >
-                {props.isLoadingOlderHistory ? 'Loading older messages…' : 'Load older messages'}
+                {props.isLoadingOlderHistory
+                  ? t('conversation.loadingOlder')
+                  : t('conversation.loadOlder')}
               </button>
             </div>
           </Show>
@@ -328,7 +336,7 @@ export const ConversationPane: Component<ConversationPaneProps> = (props) => {
           type="button"
           class="scroll-to-bottom-btn"
           onClick={scrollToBottom}
-          title="Scroll to bottom"
+          title={t('conversation.scrollToBottom')}
         >
           <ArrowDown size={13} />
         </button>

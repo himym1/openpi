@@ -20,7 +20,6 @@ import {
   SessionManager,
   SettingsManager,
 } from '@earendil-works/pi-coding-agent'
-import { expandPromptTemplateText } from '../src/lib/sessionPrompt'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -174,15 +173,6 @@ function outputLine(level: 'info' | 'warn' | 'error', text: string): void {
   send({ type: 'output_append', line: { level, text, ts: Date.now() } })
 }
 
-function stripFrontmatter(content: string): string {
-  const trimmed = content.trimStart()
-  if (!trimmed.startsWith('---')) return trimmed
-  const afterOpen = trimmed.slice(3)
-  const closeIdx = afterOpen.indexOf('\n---')
-  if (closeIdx === -1) return trimmed
-  return afterOpen.slice(closeIdx + 4).trimStart()
-}
-
 function buildGoalHarnessPrompt(intent: string): string {
   const normalizedIntent =
     intent.trim() || 'Inspect the active goal/harness state and recommend the next safe action.'
@@ -230,55 +220,19 @@ function expandGoalCommand(text: string): { text: string; expanded: boolean } {
   }
 }
 
-function expandSkillCommandForContext(
-  text: string,
-  session: Awaited<ReturnType<typeof createAgentSession>>['session']
-): { text: string; expanded: boolean } {
-  if (!text.startsWith('/skill:')) return { text, expanded: false }
-  const spaceIndex = text.indexOf(' ')
-  const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex)
-  const args = spaceIndex === -1 ? '' : text.slice(spaceIndex + 1).trim()
-  const skill = session.resourceLoader
-    .getSkills()
-    .skills.find((candidate) => candidate.name === skillName)
-  if (!skill) return { text, expanded: false }
-  const body = stripFrontmatter(fs.readFileSync(skill.filePath, 'utf-8')).trim()
-  const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`
-  return { text: args ? `${skillBlock}\n\n${args}` : skillBlock, expanded: true }
-}
-
 /**
  * Build the final prompt text sent to Pi SDK.
- * Always runs expansion (goal commands, then prompt templates) regardless of contextPrefix.
+ * OpenPi owns only the /goal controller and attached-context prefixing here.
+ * Pi SDK remains responsible for extension commands, input transforms,
+ * /skill:name expansion, and prompt template expansion inside session.prompt().
  */
-function buildSidecarPromptText(
-  text: string,
-  contextPrefix: string | undefined,
-  session: Awaited<ReturnType<typeof createAgentSession>>['session']
-): string {
+function buildSidecarPromptText(text: string, contextPrefix: string | undefined): string {
   const trimmed = text.trim()
   const prefix = contextPrefix?.trim()
 
-  // 1. Try goal/harness command expansion first (built-in, no template files needed)
   const goalExpanded = expandGoalCommand(trimmed)
-  if (goalExpanded.expanded) {
-    return prefix ? `${prefix}\n\n${goalExpanded.text}` : goalExpanded.text
-  }
-
-  // 2. Try skill command expansion
-  const skillExpanded = expandSkillCommandForContext(trimmed, session)
-  if (skillExpanded.expanded) {
-    return prefix ? `${prefix}\n\n${skillExpanded.text}` : skillExpanded.text
-  }
-
-  // 3. Try prompt template expansion (user-installed .md templates)
-  const templateExpanded = expandPromptTemplateText(trimmed, session.promptTemplates)
-  if (templateExpanded.expanded) {
-    return prefix ? `${prefix}\n\n${templateExpanded.text}` : templateExpanded.text
-  }
-
-  // 4. Fall through: wrap raw text with context prefix if present
-  return prefix ? `${prefix}\n\n${trimmed}` : trimmed
+  const body = goalExpanded.expanded ? goalExpanded.text : trimmed
+  return prefix ? `${prefix}\n\n${body}` : body
 }
 
 async function getResourceLoader(cwd: string, workspaceTrusted: boolean) {
@@ -499,21 +453,21 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
 
     case 'prompt': {
       if (!state) return
-      const promptText = buildSidecarPromptText(cmd.text, cmd.contextPrefix, state.session)
+      const promptText = buildSidecarPromptText(cmd.text, cmd.contextPrefix)
       await state.session.prompt(promptText)
       break
     }
 
     case 'steer': {
       if (!state) return
-      const steerText = buildSidecarPromptText(cmd.text, cmd.contextPrefix, state.session)
+      const steerText = buildSidecarPromptText(cmd.text, cmd.contextPrefix)
       await state.session.steer(steerText)
       break
     }
 
     case 'follow_up': {
       if (!state) return
-      const followUpText = buildSidecarPromptText(cmd.text, cmd.contextPrefix, state.session)
+      const followUpText = buildSidecarPromptText(cmd.text, cmd.contextPrefix)
       await state.session.followUp(followUpText)
       break
     }

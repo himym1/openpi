@@ -188,8 +188,9 @@ export class SessionIndexStore {
     })
     tx(infos)
 
-    // Only delete stale rows within the scoped workspace — rows from other
-    // workspaces haven't been scanned so must not be evicted.
+    // Delete stale rows for the scanned scope. An empty `seen` set is a valid
+    // scan result (e.g. a workspace whose Pi session directory exists but has
+    // no JSONL files yet), so it must also clear cached rows for that scope.
     if (seen.size > 0) {
       const placeholders = Array.from(seen)
         .map(() => '?')
@@ -203,6 +204,10 @@ export class SessionIndexStore {
       } else {
         this.db.prepare(`delete from sessions where path not in (${placeholders})`).run(...seen)
       }
+    } else if (workspacePath) {
+      this.db.prepare('delete from sessions where workspace_path = ?').run(workspacePath)
+    } else {
+      this.db.prepare('delete from sessions').run()
     }
 
     return this.listSessions({}, activeSessionPath, workspacePath)
@@ -596,12 +601,11 @@ export class SessionIndexStore {
   }
 }
 
-function listSessionInfos(workspacePath?: string): SessionInfo[] {
-  const sessionsRoot = path.join(os.homedir(), '.pi', 'agent', 'sessions')
+function listSessionInfos(workspacePath?: string, sessionsRoot = getSessionsRoot()): SessionInfo[] {
   if (!fs.existsSync(sessionsRoot)) return []
 
   const dirs = workspacePath
-    ? [getDefaultSessionDir(workspacePath)]
+    ? [getDefaultSessionDir(workspacePath, sessionsRoot)]
     : fs
         .readdirSync(sessionsRoot, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
@@ -626,9 +630,18 @@ function listSessionInfos(workspacePath?: string): SessionInfo[] {
   return infos.sort((a, b) => b.modified.getTime() - a.modified.getTime())
 }
 
-function getDefaultSessionDir(cwd: string): string {
+function getSessionsRoot(): string {
+  return path.join(os.homedir(), '.pi', 'agent', 'sessions')
+}
+
+function getDefaultSessionDir(cwd: string, sessionsRoot = getSessionsRoot()): string {
   const safePath = `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
-  return path.join(os.homedir(), '.pi', 'agent', 'sessions', safePath)
+  return path.join(sessionsRoot, safePath)
+}
+
+export const sessionIndexTestExports = {
+  listSessionInfos,
+  getDefaultSessionDir,
 }
 
 function buildSessionInfo(filePath: string, expectedWorkspacePath?: string): SessionInfo | null {
@@ -640,7 +653,8 @@ function buildSessionInfo(filePath: string, expectedWorkspacePath?: string): Ses
     if (!isRecord(header) || header.type !== 'session' || typeof header.id !== 'string') return null
 
     const cwd = typeof header.cwd === 'string' ? canonicalizePath(header.cwd) : ''
-    if (expectedWorkspacePath && cwd !== expectedWorkspacePath) return null
+    const expectedCwd = expectedWorkspacePath ? canonicalizePath(expectedWorkspacePath) : null
+    if (expectedCwd && cwd !== expectedCwd) return null
 
     const timestamp = typeof header.timestamp === 'string' ? header.timestamp : undefined
     return {
