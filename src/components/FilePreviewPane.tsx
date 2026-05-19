@@ -19,6 +19,7 @@ import {
   ChevronUp,
   Code2,
   FileText,
+  Keyboard,
   PanelBottomOpen,
   PanelRight,
   Replace,
@@ -132,6 +133,7 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
 
   const [formatOnSave, setFormatOnSave] = createSignal(false)
   const [wordWrap, setWordWrap] = createSignal(false)
+  const [vimMode, setVimMode] = createSignal(false)
   const [saveError, setSaveError] = createSignal<string | null>(null)
 
   let editorViewRef: EditorView | undefined
@@ -527,9 +529,22 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
                 type="button"
                 class={`fv-tb-btn${wordWrap() ? ' fv-tb-btn--active' : ''}`}
                 title={wordWrap() ? 'Disable word wrap' : 'Enable word wrap'}
+                aria-pressed={wordWrap()}
                 onClick={() => setWordWrap((v) => !v)}
               >
                 <FileText size={14} strokeWidth={1.8} />
+              </button>
+            </Show>
+
+            <Show when={!isImage()}>
+              <button
+                type="button"
+                class={`fv-tb-btn${vimMode() ? ' fv-tb-btn--active' : ''}`}
+                title={vimMode() ? 'Disable Vim mode' : 'Enable Vim mode'}
+                aria-pressed={vimMode()}
+                onClick={() => setVimMode((v) => !v)}
+              >
+                <Keyboard size={14} strokeWidth={1.8} />
               </button>
             </Show>
 
@@ -823,6 +838,8 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
               onExtraScroll={syncEditorToPreview}
               onFindRequest={() => openFindBar()}
               onReplaceRequest={() => openFindBar(true)}
+              wordWrap={wordWrap()}
+              vimMode={vimMode()}
               searchQuery={findOpen() ? findQuery() : ''}
               searchCaseSensitive={findCaseSensitive()}
               searchWholeWord={findWholeWord()}
@@ -855,6 +872,8 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
                   onExtraScroll={syncEditorToPreview}
                   onFindRequest={() => openFindBar()}
                   onReplaceRequest={() => openFindBar(true)}
+                  wordWrap={wordWrap()}
+                  vimMode={vimMode()}
                   searchQuery={findOpen() ? findQuery() : ''}
                   searchCaseSensitive={findCaseSensitive()}
                   searchWholeWord={findWholeWord()}

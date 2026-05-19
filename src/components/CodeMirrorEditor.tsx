@@ -14,6 +14,7 @@ import { python } from '@codemirror/lang-python'
 import { rust } from '@codemirror/lang-rust'
 import { Compartment, EditorState, type Extension, Prec, RangeSetBuilder } from '@codemirror/state'
 import { Decoration, type DecorationSet, EditorView, keymap } from '@codemirror/view'
+import { vim } from '@replit/codemirror-vim'
 import { githubDark, githubLight } from '@uiw/codemirror-theme-github'
 import { basicSetup } from 'codemirror'
 import { createEffect, createSignal, onCleanup, onMount } from 'solid-js'
@@ -200,6 +201,8 @@ export interface CodeMirrorEditorProps {
   onExtraScroll?: () => void
   onFindRequest?: () => void
   onReplaceRequest?: () => void
+  wordWrap?: boolean
+  vimMode?: boolean
   searchQuery?: string
   searchCaseSensitive?: boolean
   searchWholeWord?: boolean
@@ -216,6 +219,8 @@ export function CodeMirrorEditor(props: CodeMirrorEditorProps) {
   const languageCompartment = new Compartment()
   const themeCompartment = new Compartment()
   const searchHighlightCompartment = new Compartment()
+  const wordWrapCompartment = new Compartment()
+  const vimCompartment = new Compartment()
 
   onMount(() => {
     view = new EditorView({
@@ -247,9 +252,11 @@ export function CodeMirrorEditor(props: CodeMirrorEditorProps) {
               },
             ])
           ),
+          vimCompartment.of(props.vimMode ? vim() : []),
           basicSetup,
           themeCompartment.of(codeMirrorThemeForCurrentAppTheme()),
           editorChromeTheme,
+          wordWrapCompartment.of(props.wordWrap ? EditorView.lineWrapping : []),
           searchHighlightCompartment.of(
             searchHighlightExtension({
               text: props.value,
@@ -306,6 +313,20 @@ export function CodeMirrorEditor(props: CodeMirrorEditorProps) {
     if (!view || !ready()) return
     view.dispatch({
       effects: languageCompartment.reconfigure(languageFor(props.filename)),
+    })
+  })
+
+  createEffect(() => {
+    if (!view || !ready()) return
+    view.dispatch({
+      effects: wordWrapCompartment.reconfigure(props.wordWrap ? EditorView.lineWrapping : []),
+    })
+  })
+
+  createEffect(() => {
+    if (!view || !ready()) return
+    view.dispatch({
+      effects: vimCompartment.reconfigure(props.vimMode ? vim() : []),
     })
   })
 
