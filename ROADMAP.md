@@ -421,42 +421,35 @@ Acceptance criteria:
 
 ## Phase 6 — Trust, Policy, and Release Hardening
 
-**Goal:** make OpenPi safe enough for broader beta distribution by putting explicit trust boundaries around Pi resources, workspace-local code, file mutations, secrets, and packaged releases — while preserving Pi's model as a minimal, customizable coding harness.
+**Status:** ✅ Implemented (9/10 — see blocker below). Build slices 1–9 are done: workspace trust model, resource provenance inventory, extension/package enablement gates, protected path policy, high-risk mutation confirmation, secret storage and redaction, settings/capability surface, diagnostics/export bundle, and SQLite durability/startup safety. All live in `electron/protectedPaths.ts`, `electron/secretRedact.ts`, `electron/customizations.ts`, `electron/sessionIndex.ts`, and their IPC handlers in `electron/main.ts`.
 
-Pi's public positioning is the constraint: Pi is intentionally primitive-first. Extensions, skills, prompt templates, themes, and packages are the customization layer. Features such as permission gates, plan mode, MCP, sub-agents, path protection, sandboxing, and background execution are not assumed Pi core features; they are built by extensions/packages or by the embedding app. OpenPi must therefore provide desktop-level trust, provenance, policy, and release safety around Pi's extensibility model instead of pretending Pi ships those controls natively.
+**Remaining blocker:** slice 10 (release signing/notarization) requires Apple Developer secrets and a Windows signing plan — secrets that OpenPi cannot provision in code. CI infra is ready (`.github/workflows/release.yml:76-80`); the org needs to supply APPLE_ID, CSC_LINK, etc. The roadmap will be updated when signing is live.
 
-### Phase 6 principles
+---
 
-1. **Pi stays Pi.** OpenPi does not reimplement Pi's agent runtime or mislabel extension/package features as core Pi features.
-2. **Renderer remains intent-only.** Electron main owns trust decisions, filesystem writes, Git mutations, shell/PTY authority, resource reloads, secrets, and release diagnostics.
-3. **Extensions are executable code.** Project-local extensions and installed packages require visible provenance and explicit trust before enablement.
-4. **Permission gates are OpenPi policy.** High-risk confirmations live at the Electron-main boundary and/or in an OpenPi-owned Pi extension package, and the UI labels them honestly as OpenPi policy.
-5. **Release trust is product trust.** Signed/notarized builds, reproducible CI, packaged-app smoke tests, Homebrew update correctness, and clear release notes are security work.
+## Phase 7 — Agent Workbench Quality
+
+**Goal:** make OpenPi feel like a polished workbench, not a Pi SDK shell. The trust layer is solid (Phase 6); now invest in the surfaces the user touches every session.
 
 Build in thin slices:
 
-1. **Workspace trust model:** new-workspace trust prompt; trusted/untrusted state persisted in main-owned storage; project-local extensions/packages disabled until trust is granted; UI explains that project resources can execute code through Pi.
-2. **Resource provenance inventory:** Extensions, Skills, Prompts, Themes, and Packages show path, scope (global/project/package), package origin (npm/git/local), enabled state, trust requirement, last modified time, and risk level for executable resources.
-3. **Extension/package enablement gates:** enabling a project-local extension or installing/enabling a Pi package requires explicit confirmation with source path, package identifier, version/ref, install location, and reload behavior. OpenPi never silently installs or enables third-party code.
-4. **Protected path policy:** configurable main-owned protected path list; writes to sensitive locations require confirmation. Initial defaults include `~/.ssh`, `~/.gnupg`, shell profiles, OpenPi settings/secrets, `.git`, and paths outside the trusted workspace.
-5. **High-risk mutation confirmation:** destructive shell commands, file deletion, writes outside the workspace, Git reset/clean/force-push/rebase-abort, package installation, and executable project-resource enablement require explicit user approval. Renderer collects intent only; Electron main decides.
-6. **Secret storage and redaction:** store OpenPi-owned secrets with Electron `safeStorage` or an OS keychain path; do not duplicate Pi `AuthStorage` unless OpenPi owns the secret; redact secrets from logs, diagnostics, output panel entries, and export bundles.
-7. **Settings and capability surface:** settings UI for providers/models, thinking levels, auto-compaction, keybindings, extension/package configuration, and model capabilities from `ModelRegistry`; MCP appears only when supplied by an installed Pi extension/package.
-8. **Diagnostics/export bundle:** collect app logs, IPC errors, Pi sidecar status, resource inventory, Git state, and release/build metadata with path and secret redaction suitable for beta support.
-9. **SQLite durability and startup safety:** WAL mode, foreign keys, schema versioning, migration runner, slow-startup progress events, and crash-safe handling for session/workspace read-model state.
-10. **Release hardening:** macOS signing/notarization, Windows signing plan, packaged-app startup smoke tests, artifact checksum verification, Homebrew tap update verification, and CI coverage that validates packaged output, not only `npm run build`.
+1. **Testing strategy execution** — `docs/TEST_MATRIX.md` has 34 rows missing evidence. Write the missing tests: IPC Zod roundtrips, fake AgentSession fixtures, SQLite session-index upserts, PTY smoke, permission gate tests. Clear the harness lint warning as a gating step.
+2. **Subagent/task card widgets** — Pi SDK emits `Agent`/`TaskCreate`/`TaskExecute` events. Render them as first-class interactive cards: expand/collapse agent output, show task dependencies and status, expose abort/kill/re-execute.
+3. **Diff review cards** — when Pi proposes an edit, show a side-by-side diff card before apply, with accept/reject/hunk-selection controls. Stage reviews in a queue; batch into a commit workflow from the review surface.
+4. **Session map v2** — visualize session tree branches, fork points, compaction summaries, labels. Click-to-navigate, inline fork/create actions from any node.
+5. **Plan overlay polish** — live step tracking with elapsed-time per step, mini progress bar, abort-step button. Persist plan state across session reloads so interrupted plans survive app restart.
+6. **Workbench context bridge** — lazily supply cwd, visible file path, and recent terminal output to the agent's tool context (following Terax's `ToolContext` pattern). Let the agent know what the user is looking at.
+7. **Live token/cost per turn** — surface turn-level token counts and estimated cost in the conversation header during streaming, not only in a post-agent-end summary.
+8. **Electron auto-updater wire-up** — connect `electron-updater` to the release workflow for in-app update notifications with delta/blockmap support.
 
 Acceptance criteria:
-- Untrusted workspaces cannot load or enable project-local executable Pi resources without a visible trust decision.
-- Every discovered Extension, Skill, Prompt, Theme, and Package shows provenance, scope, and trust state.
-- Installing/enabling Pi packages or project-local extensions is never silent and always shows source/origin before execution.
-- High-risk file, shell, Git, and package mutations require Electron-main policy approval; renderer has no authority path around the gate.
-- Protected path checks block or confirm writes to sensitive paths and paths outside the trusted workspace.
-- OpenPi-owned secrets are encrypted at rest and redacted from logs, diagnostics, and exports.
-- Settings expose Pi-native concepts accurately: providers/models, thinking, compaction, keybindings, extensions, packages, skills, prompts, and themes.
-- Diagnostics bundles are useful for beta support without leaking secrets.
-- SQLite read models survive app restart and hard-kill scenarios without corruption.
-- Release artifacts are signed/notarized where applicable, smoke-tested after packaging, checksummed, and reflected correctly in GitHub releases and the Homebrew tap.
+- `npm test` passes and includes tests for IPC, session index, PTY, and permission gates.
+- Harness test-matrix lint reports 0 missing evidence rows.
+- Subagent/task cards render agent output with expand/collapse and abort controls.
+- Agent-proposed edits appear as reviewable diff cards before touching disk.
+- Session tree view shows branching with click-to-navigate and fork actions.
+- Plan overlay shows live step state with elapsed-time per step.
+- Auto-updater notifies on new release and installs without user intervention beyond confirmation.
 
 ---
 
