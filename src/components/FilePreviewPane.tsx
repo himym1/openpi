@@ -32,8 +32,20 @@ import { createEffect, createMemo, createSignal, onCleanup, Show } from 'solid-j
 import { FileIcon } from '../lib/fileIcons'
 import type { NewFileLineComment } from '../lib/fileLineComments'
 import { ensureHighlighter, highlightCode } from '../lib/shiki'
-import { CodeMirrorEditor } from './CodeMirrorEditor'
+import {
+  CodeMirrorEditor,
+  EDITOR_THEMES,
+  type EditorThemeId,
+  isEditorThemeId,
+} from './CodeMirrorEditor'
 import { MarkdownContent } from './conversation/MarkdownContent'
+
+const EDITOR_THEME_STORAGE_KEY = 'openpi:file-preview-editor-theme'
+
+function readStoredEditorTheme(): EditorThemeId {
+  const stored = window.localStorage.getItem(EDITOR_THEME_STORAGE_KEY)
+  return stored && isEditorThemeId(stored) ? stored : 'github'
+}
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -134,9 +146,14 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
   const [formatOnSave, setFormatOnSave] = createSignal(false)
   const [wordWrap, setWordWrap] = createSignal(false)
   const [vimMode, setVimMode] = createSignal(false)
+  const [editorTheme, setEditorTheme] = createSignal<EditorThemeId>(readStoredEditorTheme())
   const [saveError, setSaveError] = createSignal<string | null>(null)
 
   let editorViewRef: EditorView | undefined
+
+  createEffect(() => {
+    window.localStorage.setItem(EDITOR_THEME_STORAGE_KEY, editorTheme())
+  })
   const editorEl = (): HTMLElement | undefined => editorViewRef?.dom ?? undefined
   let previewScrollRef: HTMLDivElement | undefined
   let saveStatusTimer: ReturnType<typeof setTimeout> | undefined
@@ -525,6 +542,23 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
             </Show>
 
             <Show when={!isImage()}>
+              <label class="fv-theme-select" title="Editor theme">
+                <span class="fv-theme-select-label">Theme</span>
+                <select
+                  value={editorTheme()}
+                  onChange={(event) => {
+                    const nextTheme = event.currentTarget.value
+                    if (isEditorThemeId(nextTheme)) setEditorTheme(nextTheme)
+                  }}
+                >
+                  {EDITOR_THEMES.map((theme) => (
+                    <option value={theme.id}>{theme.label}</option>
+                  ))}
+                </select>
+              </label>
+            </Show>
+
+            <Show when={!isImage()}>
               <button
                 type="button"
                 class={`fv-tb-btn${wordWrap() ? ' fv-tb-btn--active' : ''}`}
@@ -840,6 +874,7 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
               onReplaceRequest={() => openFindBar(true)}
               wordWrap={wordWrap()}
               vimMode={vimMode()}
+              editorTheme={editorTheme()}
               searchQuery={findOpen() ? findQuery() : ''}
               searchCaseSensitive={findCaseSensitive()}
               searchWholeWord={findWholeWord()}
@@ -874,6 +909,7 @@ export function FilePreviewPane(props: FilePreviewPaneProps) {
                   onReplaceRequest={() => openFindBar(true)}
                   wordWrap={wordWrap()}
                   vimMode={vimMode()}
+                  editorTheme={editorTheme()}
                   searchQuery={findOpen() ? findQuery() : ''}
                   searchCaseSensitive={findCaseSensitive()}
                   searchWholeWord={findWholeWord()}

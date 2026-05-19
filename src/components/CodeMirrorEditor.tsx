@@ -15,7 +15,13 @@ import { rust } from '@codemirror/lang-rust'
 import { Compartment, EditorState, type Extension, Prec, RangeSetBuilder } from '@codemirror/state'
 import { Decoration, type DecorationSet, EditorView, keymap } from '@codemirror/view'
 import { vim } from '@replit/codemirror-vim'
+import { atomone } from '@uiw/codemirror-theme-atomone'
+import { aura } from '@uiw/codemirror-theme-aura'
 import { githubDark, githubLight } from '@uiw/codemirror-theme-github'
+import { nord } from '@uiw/codemirror-theme-nord'
+import { tokyoNight } from '@uiw/codemirror-theme-tokyo-night'
+import { vscodeDark } from '@uiw/codemirror-theme-vscode'
+import { xcodeDark, xcodeLight } from '@uiw/codemirror-theme-xcode'
 import { basicSetup } from 'codemirror'
 import { createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 
@@ -52,8 +58,41 @@ function languageFor(filename: string): Extension {
   return []
 }
 
-function codeMirrorThemeForCurrentAppTheme(): Extension {
-  return document.documentElement.getAttribute('data-theme') === 'light' ? githubLight : githubDark
+export const EDITOR_THEMES = [
+  { id: 'github', label: 'GitHub' },
+  { id: 'tokyo-night', label: 'Tokyo Night' },
+  { id: 'nord', label: 'Nord' },
+  { id: 'atom-one', label: 'Atom One' },
+  { id: 'aura', label: 'Aura' },
+  { id: 'xcode', label: 'Xcode' },
+  { id: 'copilot', label: 'Copilot' },
+] as const
+
+export type EditorThemeId = (typeof EDITOR_THEMES)[number]['id']
+
+export function isEditorThemeId(value: string): value is EditorThemeId {
+  return EDITOR_THEMES.some((theme) => theme.id === value)
+}
+
+function codeMirrorThemeForCurrentAppTheme(themeId: EditorThemeId = 'github'): Extension {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light'
+
+  switch (themeId) {
+    case 'github':
+      return isLight ? githubLight : githubDark
+    case 'tokyo-night':
+      return tokyoNight
+    case 'nord':
+      return nord
+    case 'atom-one':
+      return atomone
+    case 'aura':
+      return aura
+    case 'xcode':
+      return isLight ? xcodeLight : xcodeDark
+    case 'copilot':
+      return vscodeDark
+  }
 }
 
 function escapeRegExp(value: string): string {
@@ -203,6 +242,7 @@ export interface CodeMirrorEditorProps {
   onReplaceRequest?: () => void
   wordWrap?: boolean
   vimMode?: boolean
+  editorTheme?: EditorThemeId
   searchQuery?: string
   searchCaseSensitive?: boolean
   searchWholeWord?: boolean
@@ -254,7 +294,7 @@ export function CodeMirrorEditor(props: CodeMirrorEditorProps) {
           ),
           vimCompartment.of(props.vimMode ? vim() : []),
           basicSetup,
-          themeCompartment.of(codeMirrorThemeForCurrentAppTheme()),
+          themeCompartment.of(codeMirrorThemeForCurrentAppTheme(props.editorTheme)),
           editorChromeTheme,
           wordWrapCompartment.of(props.wordWrap ? EditorView.lineWrapping : []),
           searchHighlightCompartment.of(
@@ -280,7 +320,7 @@ export function CodeMirrorEditor(props: CodeMirrorEditorProps) {
 
     const themeObserver = new MutationObserver(() => {
       view?.dispatch({
-        effects: themeCompartment.reconfigure(codeMirrorThemeForCurrentAppTheme()),
+        effects: themeCompartment.reconfigure(codeMirrorThemeForCurrentAppTheme(props.editorTheme)),
       })
     })
     themeObserver.observe(document.documentElement, {
@@ -313,6 +353,13 @@ export function CodeMirrorEditor(props: CodeMirrorEditorProps) {
     if (!view || !ready()) return
     view.dispatch({
       effects: languageCompartment.reconfigure(languageFor(props.filename)),
+    })
+  })
+
+  createEffect(() => {
+    if (!view || !ready()) return
+    view.dispatch({
+      effects: themeCompartment.reconfigure(codeMirrorThemeForCurrentAppTheme(props.editorTheme)),
     })
   })
 

@@ -48,6 +48,64 @@ type PlanStep = {
   status: PlanStepStatus
 }
 
+type UnknownRecord = Record<string, unknown>
+
+type GoalSetEntry = {
+  type: 'custom'
+  customType: string
+  data?: unknown
+}
+
+type MessageLike = {
+  role?: unknown
+  content?: unknown
+  usage?: unknown
+  metadata?: { usage?: unknown }
+}
+
+type UsageLike = {
+  inputTokens?: number
+  outputTokens?: number
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+}
+
+type ContextInjectionResult = {
+  messages?: Array<{ role: 'user'; content: string }>
+}
+
+type ContextAwareExtensionAPI = ExtensionAPI & {
+  on(
+    event: 'context',
+    handler: (_event: unknown, _ctx: ExtensionContext) => ContextInjectionResult
+  ): void
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null
+}
+
+function isGoalSetEntry(entry: unknown): entry is GoalSetEntry {
+  return isRecord(entry) && entry.type === 'custom' && entry.customType === 'goal_set'
+}
+
+function asMessageLike(value: unknown): MessageLike {
+  return isRecord(value) ? (value as MessageLike) : {}
+}
+
+function usageFrom(value: unknown): UsageLike {
+  return isRecord(value) ? (value as UsageLike) : {}
+}
+
+function numeric(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
+}
+
 // ── Module-level state ───────────────────────────────────────────────────────
 
 let _goal: GoalState | null = null
@@ -317,25 +375,25 @@ function persistGoal() {
 function restoreGoalFromSession(ctx: ExtensionContext) {
   try {
     const entries = ctx.sessionManager.getEntries()
-    let lastGoalData: any = null
+    let lastGoalData: UnknownRecord | null = null
     for (const entry of entries) {
-      if (entry.type === 'custom' && (entry as any).customType === 'goal_set') {
-        lastGoalData = (entry as any).data
+      if (isGoalSetEntry(entry) && isRecord(entry.data)) {
+        lastGoalData = entry.data
       }
     }
-    if (!lastGoalData || !lastGoalData.objective) {
+    if (!lastGoalData || !stringValue(lastGoalData.objective)) {
       _goal = null
       return
     }
     _goal = {
-      goalId: lastGoalData.goalId,
-      objective: lastGoalData.objective,
-      status: lastGoalData.status,
-      tokenBudget: lastGoalData.tokenBudget,
-      tokensUsed: lastGoalData.tokensUsed,
-      timeUsedSeconds: lastGoalData.timeUsedSeconds,
-      createdAt: lastGoalData.createdAt,
-      updatedAt: lastGoalData.updatedAt,
+      goalId: stringValue(lastGoalData.goalId) ?? generateId(),
+      objective: stringValue(lastGoalData.objective) ?? '',
+      status: (stringValue(lastGoalData.status) as GoalStatus | null) ?? 'active',
+      tokenBudget: typeof lastGoalData.tokenBudget === 'number' ? lastGoalData.tokenBudget : null,
+      tokensUsed: numeric(lastGoalData.tokensUsed),
+      timeUsedSeconds: numeric(lastGoalData.timeUsedSeconds),
+      createdAt: numeric(lastGoalData.createdAt),
+      updatedAt: numeric(lastGoalData.updatedAt),
     }
     _turnTokensStart = _goal.tokensUsed
     _lastObservedObjective = _goal.objective
@@ -438,7 +496,12 @@ export default function (pi: ExtensionAPI) {
         Type.Integer({ description: 'Optional positive token budget for the new active goal' })
       ),
     }),
-    execute: async (_callId: any, params: any, _onUpdate: any, ctx: any) => {
+    execute: async (
+      _callId: string,
+      params: UnknownRecord,
+      _onUpdate: unknown,
+      ctx: ExtensionContext
+    ) => {
       if (_goal) {
         return {
           content: [
@@ -501,7 +564,12 @@ export default function (pi: ExtensionAPI) {
         description: 'Set to complete only when the objective is achieved',
       }),
     }),
-    execute: async (_callId: any, _params: any, _onUpdate: any, ctx: any) => {
+    execute: async (
+      _callId: string,
+      _params: UnknownRecord,
+      _onUpdate: unknown,
+      ctx: ExtensionContext
+    ) => {
       if (!_goal) {
         return {
           content: [{ type: 'text' as const, text: 'No goal to update. Use create_goal first.' }],
@@ -539,7 +607,12 @@ export default function (pi: ExtensionAPI) {
       'Clear the current goal and ephemeral plan when explicitly requested by the user. This resets OpenPi goal and plan state.',
     promptSnippet: 'Clear the current goal and plan',
     parameters: Type.Object({}),
-    execute: async (_callId: any, _params: any, _onUpdate: any, ctx: any) => {
+    execute: async (
+      _callId: string,
+      _params: UnknownRecord,
+      _onUpdate: unknown,
+      ctx: ExtensionContext
+    ) => {
       if (!_goal && (!_plan || _plan.length === 0)) {
         clearGoalState(ctx)
         return {
@@ -576,7 +649,12 @@ export default function (pi: ExtensionAPI) {
         { description: 'The list of steps' }
       ),
     }),
-    execute: async (_callId: any, params: any, _onUpdate: any, ctx: any) => {
+    execute: async (
+      _callId: string,
+      params: UnknownRecord,
+      _onUpdate: unknown,
+      ctx: ExtensionContext
+    ) => {
       const steps = params.plan as Array<{ step: string; status: string }>
       const inProgress = steps.filter((s) => s.status === 'in_progress').length
       if (inProgress > 1) {
@@ -602,8 +680,7 @@ export default function (pi: ExtensionAPI) {
   // ── Context injection ──────────────────────────────────────────────────
   // Injects <goal_context>, <budget_limit>, <objective_updated> fragments
   // before every provider request, matching Codex's approach.
-
-  pi.on('context' as any, (_event: any, _ctx: any): any => {
+  ;(pi as ContextAwareExtensionAPI).on('context', (_event: unknown, _ctx: ExtensionContext) => {
     if (!_goal) return {}
 
     const fragments: string[] = []
@@ -674,7 +751,7 @@ export default function (pi: ExtensionAPI) {
     if (fragments.length === 0) return {}
     return {
       messages: [{ role: 'user', content: fragments.join('\n\n') }],
-    } as any
+    }
   })
 
   // ── Lifecycle events ───────────────────────────────────────────────────
@@ -703,18 +780,18 @@ export default function (pi: ExtensionAPI) {
     _turnStartMs = null
 
     // Scan for <proposed_plan> blocks (stateless parser)
-    if ((event.message as any)?.role === 'assistant') {
-      const content =
-        typeof (event.message as any)?.content === 'string' ? (event.message as any).content : ''
+    const turnMessage = asMessageLike(event.message)
+    if (turnMessage.role === 'assistant') {
+      const content = stringValue(turnMessage.content) ?? ''
       const result = extractProposedPlan(content, _inProposedPlan, _proposedPlanText)
       _inProposedPlan = result.inBlock
       _proposedPlanText = result.proposedPlanText ?? result.accumulator
     }
 
-    const usage = (event.message as any)?.usage || (event.message as any)?.metadata?.usage || {}
+    const usage = usageFrom(turnMessage.usage ?? turnMessage.metadata?.usage)
     const tokenDelta =
-      (usage.outputTokens ?? usage.completionTokens ?? usage.totalTokens ?? 0) +
-      (usage.inputTokens ?? usage.promptTokens ?? 0)
+      numeric(usage.outputTokens ?? usage.completionTokens ?? usage.totalTokens) +
+      numeric(usage.inputTokens ?? usage.promptTokens)
     accountTurn(ctx, timeDelta, tokenDelta)
   })
 
@@ -726,11 +803,12 @@ export default function (pi: ExtensionAPI) {
     let inBlock = _inProposedPlan
     let accum = _proposedPlanText
     for (const msg of msgs) {
-      const u = (msg as any)?.usage || (msg as any)?.metadata?.usage || {}
-      totalTokens += u.totalTokens ?? u.outputTokens ?? u.completionTokens ?? 0
-      totalTokens += u.inputTokens ?? u.promptTokens ?? 0
-      if (!proposedPlanFound && (msg as any)?.role === 'assistant') {
-        const content = typeof (msg as any)?.content === 'string' ? (msg as any).content : ''
+      const message = asMessageLike(msg)
+      const u = usageFrom(message.usage ?? message.metadata?.usage)
+      totalTokens += numeric(u.totalTokens ?? u.outputTokens ?? u.completionTokens)
+      totalTokens += numeric(u.inputTokens ?? u.promptTokens)
+      if (!proposedPlanFound && message.role === 'assistant') {
+        const content = stringValue(message.content) ?? ''
         const result = extractProposedPlan(content, inBlock, accum)
         inBlock = result.inBlock
         accum = result.accumulator
@@ -752,11 +830,11 @@ export default function (pi: ExtensionAPI) {
       try {
         const planMd = proposedPlanFound.trim()
         const result = await ctx.ui.custom<string | null>(
-          (_tui: any, _theme: any, _kb: any, done: (v: string | null) => void) => ({
+          (_tui: unknown, _theme: unknown, _kb: unknown, done: (v: string | null) => void) => ({
             render: (w: number) => {
               const lines = ['\x1b[1mImplement this plan?\x1b[22m', '']
               for (const line of planMd.split('\n').filter(Boolean)) {
-                lines.push(`  ${line.length > w - 4 ? line.slice(0, w - 7) + '…' : line}`)
+                lines.push(`  ${line.length > w - 4 ? `${line.slice(0, w - 7)}…` : line}`)
               }
               lines.push('', '\x1b[36m[1]\x1b[39m Yes, implement this plan')
               lines.push('\x1b[36m[2]\x1b[39m No, stay in current mode')
