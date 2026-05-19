@@ -1,23 +1,21 @@
-# OpenPi v0.1.16 - 2026-05-18
+# OpenPi v0.1.17 - 2026-05-19
 
 ### Added
 
-- **Session Map panel** — interactive tree view of the Pi session tree with branch navigation, fork points, compaction summaries, label badges, and click-to-scroll. Redesigned as a Session Map with compact inspector density: inline summary header, hidden zero-metric cards, single-line normal entries, important-only metadata, smaller markers/rails, lighter solo active branch styling. Auto-refreshes when agent finishes a turn. (8fafe7c, 6269ecb)
-- **Agent-aware Git workflow** — agent-changed files IPC emits file paths on agent end. Clickable agent banner in GitPanel with animated Kobalte tooltip showing changed file paths (status-colored, monospace font) with 300ms open delay and TooltipArrow. Filtered review view for agent-only files. AI commit message generation uses agent turn context when available. (8baeeef)
-- **SVG commit graph** — colored lane dots (8-cycle colors) with vertical, diagonal, and horizontal connection lines replacing raw ASCII `<pre>` output. 14px column widths, 28px row height. (b18c6c1)
-- **Ref badge labels** — branch, remote, tag, and HEAD badges parsed from `%D` refs format with distinct color-coded styling. (b18c6c1)
-- **Commit diff viewer integration** — clicking a changed file in commit details opens the commit-version diff in the side-by-side DiffViewer via new `GET_COMMIT_DIFF` IPC. (b18c6c1)
-- **Open on GitHub** — button in commit details when remote origin is detected as github.com (supports HTTPS and SSH remotes). (b18c6c1)
-- **Branch picker enhancements** — inline create-branch input with duplicate checking. Stash apply, pop, and drop action buttons with color-coded hover states. (b18c6c1)
-- **Inline AskWidget tray** — compose area inlined in the main panel instead of opening as a separate modal. (5bd0734)
+- **Goal and plan feedback loop** — added durable goal/plan sync for OpenPi, a structured `clear_goal` tool, clearer `update_plan` output for Pi TUI, and explicit guidance separating ephemeral plans from durable `pi-tasks`. (173c823, caa39ec)
+- **Terminal polish** — added shell integration for zsh/bash cwd markers, true-color env, WebGL rendering, Ghostty-like styling, Nerd Font fallback, cwd-aware terminal tab labels, rename flow, and exit indicators. (00e86e0)
+- **File editor upgrades** — migrated preview editing to CodeMirror 6 with language support for TS/JS, Rust, Python, HTML/CSS, JSON, and Markdown; added working word wrap, Vim mode, search highlighting/autoscroll, and a persisted theme selector for GitHub, Tokyo Night, Nord, Atom One, Aura, Xcode, and Copilot-like themes. (820d2c0, 8d6b4ac, ac37a66)
+- **Workbench file controls** — added file/folder delete from the file tree with main-owned trash confirmation, Git/file tree refresh, and automatic closing of deleted previews. (c8f7e3c)
+- **Harness and IPC coverage** — expanded IPC, PTY, session index, and harness lint coverage. (e5c420a)
 
 ### Changed
 
-- **Session Map density** — compact inspector mode is now the default layout, reducing visual noise for long single-branch sessions. (6269ecb)
-- **Code block line numbers** — always shown by default; removed the line-number toggle button. (2fddc7e)
-- **User messages rendered as markdown** — user messages now render through the markdown pipeline for consistent formatting. (3a8cf74)
+- **Workbench surfaces** — polished file preview search behavior, file tree scrolling, plan tool cards, Git/file surfaces, composer metadata, and release update metadata. (c8f7e3c, 3dda132)
+- **Stories navigation** — removed the bottom-bar Stories entry point while keeping story docs available in the repository. (caa39ec)
+- **Roadmap and architecture docs** — documented Phase 7 Agent Workbench Quality and Terax architecture lessons. (fdf1258, b7462eb)
 
 ### Fixed
 
-- **Sidecar session lifecycle** — `session_shutdown` emitted before `session.dispose()` so extensions can clean up timers and ctx references, preventing stale-ctx crashes on session replacement or reload. (69fc393)
-- **Line number regex** — full `<span class="line">` tag consumed to prevent stray `>` characters in rendered code blocks. (00ba1aa)
+- **OpenPi bridge detection** — fixed `workerPid` getter and `OPENPI_BRIDGE_APP` sync bridge detection. (452e200)
+- **Composer TPS display** — summed per-message durations and moved TPS display into the Composer. (ae258b2)
+- **Release automation** — pinned `action-gh-release` with explicit token handling and fail-on-unmatched-assets behavior. (21b4186)
