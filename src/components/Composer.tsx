@@ -5,6 +5,7 @@ import {
   BookOpen,
   ChevronDown,
   Clock,
+  Image,
   MessageSquare,
   Paperclip,
   Plus,
@@ -34,7 +35,7 @@ import {
   removeFileMentionToken,
 } from '../lib/fileMentions'
 import { t } from '../lib/i18n'
-import type { FffFileResult, ModelInfo, SkillItem } from '../lib/ipc'
+import type { FffFileResult, ModelInfo, PromptImage, SkillItem } from '../lib/ipc'
 import {
   buildKeybindingEntries,
   eventMatchesBinding,
@@ -80,8 +81,11 @@ type ComposerProps = {
   cwd: string | null
   /** Relative paths of files currently attached as context */
   attachedFiles: string[]
+  attachedImages: PromptImage[]
   onAddFile: (relPath: string) => void
   onRemoveFile: (relPath: string) => void
+  onAddImages: (images: PromptImage[]) => void
+  onRemoveImage: (index: number) => void
   /** File line comments captured from the file preview modal */
   lineComments: FileLineComment[]
   onRemoveLineComment: (id: string) => void
@@ -441,6 +445,28 @@ const FileChip: Component<FileChipProps> = (props) => {
   )
 }
 
+// ─── Pasted image chip ────────────────────────────────────────────────
+
+type ImageChipProps = { image: PromptImage; index: number; onRemove: () => void }
+
+const ImageChip: Component<ImageChipProps> = (props) => (
+  <span class="ctx-chip" title={props.image.mimeType}>
+    <span class="ctx-chip-icon">
+      <Image size={11} />
+    </span>
+    <span class="ctx-chip-name">Image {props.index + 1}</span>
+    <button
+      type="button"
+      class="ctx-chip-remove"
+      onClick={props.onRemove}
+      tabIndex={-1}
+      aria-label={`Remove pasted image ${props.index + 1}`}
+    >
+      ×
+    </button>
+  </span>
+)
+
 // ─── File line comment chip ────────────────────────────────────────────
 
 type LineCommentChipProps = { comment: FileLineComment; onRemove: () => void }
@@ -625,6 +651,31 @@ export const Composer: Component<ComposerProps> = (props) => {
   const [modelSearch, setModelSearch] = createSignal('')
   let modelRef: HTMLDivElement | undefined
   let modelSearchRef: HTMLInputElement | undefined
+
+  const readPastedImage = (file: File): Promise<PromptImage> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(reader.error ?? new Error('Could not read pasted image'))
+      reader.onload = () => {
+        const result = typeof reader.result === 'string' ? reader.result : ''
+        const comma = result.indexOf(',')
+        const data = comma >= 0 ? result.slice(comma + 1) : result
+        resolve({ type: 'image', mimeType: file.type || 'image/png', data })
+      }
+      reader.readAsDataURL(file)
+    })
+
+  const handlePaste = (event: ClipboardEvent) => {
+    const items = Array.from(event.clipboardData?.items ?? [])
+    const imageFiles = items
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file))
+    if (imageFiles.length === 0) return
+
+    event.preventDefault()
+    void Promise.all(imageFiles.map(readPastedImage)).then((images) => props.onAddImages(images))
+  }
 
   // Thinking dropdown
   const [thinkingOpen, setThinkingOpen] = createSignal(false)
@@ -1131,6 +1182,7 @@ export const Composer: Component<ComposerProps> = (props) => {
           <Show
             when={
               props.attachedFiles.length > 0 ||
+              props.attachedImages.length > 0 ||
               props.lineComments.length > 0 ||
               props.loadedSkills.length > 0
             }
@@ -1141,6 +1193,15 @@ export const Composer: Component<ComposerProps> = (props) => {
               </For>
               <For each={props.attachedFiles}>
                 {(p) => <FileChip relPath={p} onRemove={() => props.onRemoveFile(p)} />}
+              </For>
+              <For each={props.attachedImages}>
+                {(image, index) => (
+                  <ImageChip
+                    image={image}
+                    index={index()}
+                    onRemove={() => props.onRemoveImage(index())}
+                  />
+                )}
               </For>
               <For each={props.lineComments}>
                 {(comment) => (
@@ -1186,6 +1247,7 @@ export const Composer: Component<ComposerProps> = (props) => {
                   : t('composer.askAbout', { name: props.workspaceName })
             }
             value={props.input}
+            onPaste={handlePaste}
             onInput={(event) => {
               const val = event.currentTarget.value
               const caret = event.currentTarget.selectionStart ?? val.length
@@ -1640,6 +1702,7 @@ export const Composer: Component<ComposerProps> = (props) => {
                         ? !props.input.trim() || props.isShellRunning
                         : !props.input.trim() &&
                           props.attachedFiles.length === 0 &&
+                          props.attachedImages.length === 0 &&
                           props.lineComments.length === 0 &&
                           props.loadedSkills.length === 0
                     }

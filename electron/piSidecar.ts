@@ -23,6 +23,8 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
+export type PromptImage = { type: 'image'; mimeType: string; data: string }
+
 export type SidecarCommand =
   | {
       type: 'start_session'
@@ -32,9 +34,9 @@ export type SidecarCommand =
       requestId?: string
       workspaceTrusted?: boolean
     }
-  | { type: 'prompt'; text: string; contextPrefix?: string }
-  | { type: 'steer'; text: string; contextPrefix?: string }
-  | { type: 'follow_up'; text: string; contextPrefix?: string }
+  | { type: 'prompt'; text: string; contextPrefix?: string; images?: PromptImage[] }
+  | { type: 'steer'; text: string; contextPrefix?: string; images?: PromptImage[] }
+  | { type: 'follow_up'; text: string; contextPrefix?: string; images?: PromptImage[] }
   | { type: 'list_prompt_templates'; requestId: string; cwd?: string; workspaceTrusted?: boolean }
   | { type: 'list_skills'; requestId: string; cwd?: string; workspaceTrusted?: boolean }
   | {
@@ -454,21 +456,21 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     case 'prompt': {
       if (!state) return
       const promptText = buildSidecarPromptText(cmd.text, cmd.contextPrefix)
-      await state.session.prompt(promptText)
+      await state.session.prompt(promptText, { images: cmd.images })
       break
     }
 
     case 'steer': {
       if (!state) return
       const steerText = buildSidecarPromptText(cmd.text, cmd.contextPrefix)
-      await state.session.steer(steerText)
+      await state.session.steer(steerText, cmd.images)
       break
     }
 
     case 'follow_up': {
       if (!state) return
       const followUpText = buildSidecarPromptText(cmd.text, cmd.contextPrefix)
-      await state.session.followUp(followUpText)
+      await state.session.followUp(followUpText, cmd.images)
       break
     }
 

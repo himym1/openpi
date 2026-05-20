@@ -149,9 +149,17 @@ export const appInfoSchema = z.object({
 })
 export type AppInfo = z.infer<typeof appInfoSchema>
 
+export const promptImageSchema = z.object({
+  type: z.literal('image'),
+  mimeType: z.string().min(1).max(100),
+  data: z.string().min(1).max(20_000_000),
+})
+export type PromptImage = z.infer<typeof promptImageSchema>
+
 export const sessionPromptSchema = z.object({
   text: z.string().min(1).max(100_000),
   contextPrefix: z.string().min(1).max(100_000).optional(),
+  images: z.array(promptImageSchema).max(8).optional(),
 })
 export type SessionPrompt = z.infer<typeof sessionPromptSchema>
 

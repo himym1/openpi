@@ -52,7 +52,7 @@ import {
   UI_LANGUAGE_CHANGED_EVENT,
   type UiLanguagePreference,
 } from './lib/i18n'
-import type { AppInfo, GitChangedFile, GitFileDiff, SkillItem } from './lib/ipc'
+import type { AppInfo, GitChangedFile, GitFileDiff, PromptImage, SkillItem } from './lib/ipc'
 import {
   buildKeybindingEntries,
   eventMatchesBinding,
@@ -180,6 +180,7 @@ export default function App() {
   >([])
   const [pinnedSessions, setPinnedSessions] = createSignal<Set<string>>(new Set())
   const [attachedFiles, setAttachedFiles] = createSignal<string[]>([])
+  const [attachedImages, setAttachedImages] = createSignal<PromptImage[]>([])
   const [lineComments, setLineComments] = createSignal<FileLineComment[]>([])
   const [loadedSkills, setLoadedSkills] = createSignal<SkillItem[]>([])
   const [hiddenModels, setHiddenModels] = createSignal<Set<string>>(new Set())
@@ -583,6 +584,14 @@ export default function App() {
     setAttachedFiles((prev) => prev.filter((p) => p !== relPath))
   }
 
+  const addAttachedImages = (images: PromptImage[]) => {
+    setAttachedImages((prev) => [...prev, ...images].slice(0, 8))
+  }
+
+  const removeAttachedImage = (index: number) => {
+    setAttachedImages((prev) => prev.filter((_, i) => i !== index))
+  }
+
   const addLineComment = (comment: NewFileLineComment) => {
     const id =
       globalThis.crypto?.randomUUID?.() ?? `${comment.path}:${comment.startLine}-${Date.now()}`
@@ -603,7 +612,10 @@ export default function App() {
 
   const handleSend = async () => {
     const hasContext =
-      loadedSkills().length > 0 || attachedFiles().length > 0 || lineComments().length > 0
+      loadedSkills().length > 0 ||
+      attachedFiles().length > 0 ||
+      attachedImages().length > 0 ||
+      lineComments().length > 0
     if (!session.input.trim() && !hasContext) return
 
     let prefix = ''
@@ -651,7 +663,9 @@ export default function App() {
       setLineComments([])
     }
 
-    void session.send(prefix || undefined)
+    const images = attachedImages()
+    void session.send(prefix || undefined, images.length ? images : undefined)
+    if (images.length > 0) setAttachedImages([])
   }
 
   const toggleHiddenModel = (key: string) => {
@@ -1047,8 +1061,11 @@ export default function App() {
                       setTextareaRef={session.setTextareaRef}
                       cwd={cwd()}
                       attachedFiles={attachedFiles()}
+                      attachedImages={attachedImages()}
                       onAddFile={addAttachedFile}
                       onRemoveFile={removeAttachedFile}
+                      onAddImages={addAttachedImages}
+                      onRemoveImage={removeAttachedImage}
                       lineComments={lineComments()}
                       onRemoveLineComment={removeLineComment}
                       loadedSkills={loadedSkills()}

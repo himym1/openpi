@@ -1016,11 +1016,12 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.SESSION_PROMPT, async (_event, raw: unknown) => {
     const active = await ensureActiveSession()
     if (!active) return
-    const { text, contextPrefix } = sessionPromptSchema.parse(raw)
+    const { text, contextPrefix, images } = sessionPromptSchema.parse(raw)
     requirePiSidecar().send({
       type: 'prompt',
       text,
       contextPrefix: injectWorkbenchPrefix(contextPrefix),
+      images,
     })
   })
 
@@ -1036,22 +1037,24 @@ ${contextPrefix}`
   ipcMain.handle(IPC.SESSION_STEER, async (_event, raw: unknown) => {
     const active = await ensureActiveSession()
     if (!active) return
-    const { text, contextPrefix } = sessionPromptSchema.parse(raw)
+    const { text, contextPrefix, images } = sessionPromptSchema.parse(raw)
     requirePiSidecar().send({
       type: 'steer',
       text,
       contextPrefix: injectWorkbenchPrefix(contextPrefix),
+      images,
     })
   })
 
   ipcMain.handle(IPC.SESSION_FOLLOW_UP, async (_event, raw: unknown) => {
     const active = await ensureActiveSession()
     if (!active) return
-    const { text, contextPrefix } = sessionPromptSchema.parse(raw)
+    const { text, contextPrefix, images } = sessionPromptSchema.parse(raw)
     requirePiSidecar().send({
       type: 'follow_up',
       text,
       contextPrefix: injectWorkbenchPrefix(contextPrefix),
+      images,
     })
   })
 

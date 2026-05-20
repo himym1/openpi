@@ -38,6 +38,7 @@ import type {
   PiUpdateCheckResult,
   PiUpdateInstallResult,
   PlanUpdate,
+  PromptImage,
   PromptTemplate,
   ProviderInfo,
   ProviderLoginEvent,
@@ -77,14 +78,14 @@ const api = {
   pickWorkspace: (): Promise<PickWorkspaceResult> => ipcRenderer.invoke(IPC.PICK_WORKSPACE),
 
   // ── Session commands ─────────────────────────────────────────────────────
-  prompt: (text: string, contextPrefix?: string): Promise<void> =>
-    ipcRenderer.invoke(IPC.SESSION_PROMPT, { text, contextPrefix }),
+  prompt: (text: string, contextPrefix?: string, images?: PromptImage[]): Promise<void> =>
+    ipcRenderer.invoke(IPC.SESSION_PROMPT, { text, contextPrefix, images }),
 
-  steer: (text: string, contextPrefix?: string): Promise<void> =>
-    ipcRenderer.invoke(IPC.SESSION_STEER, { text, contextPrefix }),
+  steer: (text: string, contextPrefix?: string, images?: PromptImage[]): Promise<void> =>
+    ipcRenderer.invoke(IPC.SESSION_STEER, { text, contextPrefix, images }),
 
-  followUp: (text: string, contextPrefix?: string): Promise<void> =>
-    ipcRenderer.invoke(IPC.SESSION_FOLLOW_UP, { text, contextPrefix }),
+  followUp: (text: string, contextPrefix?: string, images?: PromptImage[]): Promise<void> =>
+    ipcRenderer.invoke(IPC.SESSION_FOLLOW_UP, { text, contextPrefix, images }),
 
   bash: (command: string, excludeFromContext = false): Promise<BashExecutionResult> =>
     ipcRenderer.invoke(IPC.SESSION_BASH, { command, excludeFromContext }),

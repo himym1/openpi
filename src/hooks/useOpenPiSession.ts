@@ -27,6 +27,7 @@ import type {
   GoalUpdate,
   ModelInfo,
   PlanUpdate,
+  PromptImage,
   RemoteSessionUpdate,
   SessionEvent,
   SessionListItem,
@@ -543,10 +544,12 @@ export function useOpenPiSession() {
     }
   }
 
-  const send = async (contextPrefix?: string) => {
+  const send = async (contextPrefix?: string, images?: PromptImage[]) => {
     const promptPayload = buildSessionPromptPayload(input(), contextPrefix)
     const r = ready()
-    if (!promptPayload.text || !r) return
+    const promptText =
+      promptPayload.text || (images?.length ? 'Please analyze the attached image.' : '')
+    if (!promptText || !r) return
 
     // Detect /goal command from the raw input text and sync goal state
     const rawText = input().trim()
@@ -565,12 +568,12 @@ export function useOpenPiSession() {
     markLocalActivity()
     try {
       if (queueMode() === 'steer')
-        await window.openpi.steer(promptPayload.text, promptPayload.contextPrefix)
+        await window.openpi.steer(promptText, promptPayload.contextPrefix, images)
       else if (queueMode() === 'followup')
-        await window.openpi.followUp(promptPayload.text, promptPayload.contextPrefix)
+        await window.openpi.followUp(promptText, promptPayload.contextPrefix, images)
       else {
         _justSentPrompt = true
-        await window.openpi.prompt(promptPayload.text, promptPayload.contextPrefix)
+        await window.openpi.prompt(promptText, promptPayload.contextPrefix, images)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
