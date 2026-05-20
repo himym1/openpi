@@ -1,6 +1,6 @@
 import { Check, FolderOpen, Globe, RotateCcw } from 'lucide-solid'
 import { createEffect, createSignal, For, onCleanup, Show } from 'solid-js'
-import type { PiSettings, SettingsResult } from '../../lib/ipc'
+import type { ModelInfo, PiSettings, SettingsResult } from '../../lib/ipc'
 
 function getNestedValue(obj: PiSettings, key: string): unknown {
   const parts = key.split('.')
@@ -391,6 +391,7 @@ const SECTIONS: SettingSection[] = [
 
 interface SettingsPaneProps {
   hasCwd: boolean
+  models: ModelInfo[]
   onError: (message: string) => void
 }
 
@@ -447,7 +448,11 @@ export function SettingsPane(props: SettingsPaneProps) {
 
   const setValue = (key: string, value: unknown) => {
     setLocal((prev) => {
-      const next = setNestedValue(prev, key, value)
+      let next = setNestedValue(prev, key, value)
+      if (key === 'defaultModel' && typeof value === 'string') {
+        const selectedModel = props.models.find((model) => model.id === value)
+        if (selectedModel) next = setNestedValue(next, 'defaultProvider', selectedModel.provider)
+      }
       scheduleSave(key, next)
       return next
     })
@@ -486,6 +491,35 @@ export function SettingsPane(props: SettingsPaneProps) {
     scope() === 'global'
       ? (result()?.globalPath ?? '~/.pi/agent/settings.json')
       : (result()?.projectPath ?? '.pi/settings.json')
+
+  const providerOptions = () => {
+    const providers = new Set(props.models.map((model) => model.provider).filter(Boolean))
+    const current = getNestedValue(local(), 'defaultProvider')
+    if (typeof current === 'string' && current) providers.add(current)
+    return [...providers].sort((a, b) => a.localeCompare(b))
+  }
+
+  const modelOptions = () => {
+    const seen = new Set<string>()
+    const models = props.models
+      .filter((model) => {
+        if (seen.has(model.id)) return false
+        seen.add(model.id)
+        return true
+      })
+      .sort((a, b) => a.name.localeCompare(b.name) || a.provider.localeCompare(b.provider))
+    const current = getNestedValue(local(), 'defaultModel')
+    if (typeof current === 'string' && current && !seen.has(current)) {
+      models.unshift({
+        id: current,
+        name: current,
+        provider: 'configured',
+        reasoning: false,
+        contextWindow: 0,
+      })
+    }
+    return models
+  }
 
   return (
     <div class="osp-root">
@@ -540,6 +574,8 @@ export function SettingsPane(props: SettingsPaneProps) {
                           scope={scope()}
                           isLast={i() === section.fields.length - 1}
                           savedKey={savedKey()}
+                          providerOptions={providerOptions()}
+                          modelOptions={modelOptions()}
                           onChange={(v) => setValue(field.key, v)}
                           onReset={() => clearValue(field.key)}
                         />
@@ -567,6 +603,8 @@ interface RowProps {
   scope: 'global' | 'project'
   isLast: boolean
   savedKey: string | null
+  providerOptions: string[]
+  modelOptions: ModelInfo[]
   onChange: (v: unknown) => void
   onReset: () => void
 }
@@ -606,7 +644,13 @@ function SettingRow(props: RowProps) {
             <RotateCcw size={11} />
           </button>
         </Show>
-        <FieldControl field={props.field} value={props.value} onChange={props.onChange} />{' '}
+        <FieldControl
+          field={props.field}
+          value={props.value}
+          providerOptions={props.providerOptions}
+          modelOptions={props.modelOptions}
+          onChange={props.onChange}
+        />{' '}
       </div>
     </div>
   )
@@ -615,20 +659,22 @@ function SettingRow(props: RowProps) {
 function FieldControl(props: {
   field: SettingField
   value: unknown
+  providerOptions: string[]
+  modelOptions: ModelInfo[]
   onChange: (v: unknown) => void
 }) {
   if (props.field.type === 'boolean') {
-    const on =
+    const on = () =>
       typeof props.value === 'boolean'
         ? props.value
         : ((props.field.default as boolean | undefined) ?? false)
     return (
       <button
         type="button"
-        class={`osp-toggle${on ? ' is-on' : ''}`}
-        onClick={() => props.onChange(!on)}
+        class={`osp-toggle${on() ? ' is-on' : ''}`}
+        onClick={() => props.onChange(!on())}
         role="switch"
-        aria-checked={on}
+        aria-checked={on()}
         aria-label={props.field.label}
       >
         <span class="osp-toggle-thumb" />
@@ -637,27 +683,36 @@ function FieldControl(props: {
   }
 
   if (props.field.type === 'select') {
-    const val =
+    const val = () =>
       props.value !== undefined && props.value !== null && props.value !== ''
         ? String(props.value)
         : ''
     return (
       <select
         class="osp-select"
-        value={val}
+        ref={(el) =>
+          createEffect(() => {
+            el.value = val()
+          })
+        }
+        value={val()}
         onChange={(e) =>
           props.onChange(e.currentTarget.value === '' ? undefined : e.currentTarget.value)
         }
       >
         <For each={props.field.options}>
-          {(opt) => <option value={opt}>{opt === '' ? 'Default' : opt}</option>}
+          {(opt) => (
+            <option value={opt} selected={opt === val()}>
+              {opt === '' ? 'Default' : opt}
+            </option>
+          )}
         </For>
       </select>
     )
   }
 
   if (props.field.type === 'number') {
-    const num =
+    const num = () =>
       props.value !== undefined && props.value !== null
         ? Number(props.value)
         : ((props.field.default as number | undefined) ?? 0)
@@ -665,7 +720,7 @@ function FieldControl(props: {
       <input
         class="osp-input osp-input-num"
         type="number"
-        value={num}
+        value={num()}
         min={props.field.min}
         max={props.field.max}
         step={props.field.step ?? 1}
@@ -677,15 +732,75 @@ function FieldControl(props: {
   }
 
   if (props.field.type === 'string') {
-    const str =
+    const str = () =>
       props.value !== undefined && props.value !== null && props.value !== ''
         ? String(props.value)
         : ''
+
+    if (props.field.key === 'defaultProvider') {
+      return (
+        <select
+          class="osp-select"
+          ref={(el) =>
+            createEffect(() => {
+              el.value = str()
+              el.selectedIndex = str() === '' ? 0 : props.providerOptions.indexOf(str()) + 1
+            })
+          }
+          value={str()}
+          onChange={(e) =>
+            props.onChange(e.currentTarget.value === '' ? undefined : e.currentTarget.value)
+          }
+        >
+          <option value="" selected={str() === ''}>
+            Default
+          </option>
+          <For each={props.providerOptions}>
+            {(provider) => (
+              <option value={provider} selected={provider === str()}>
+                {provider}
+              </option>
+            )}
+          </For>
+        </select>
+      )
+    }
+
+    if (props.field.key === 'defaultModel') {
+      return (
+        <select
+          class="osp-select osp-select-wide"
+          ref={(el) =>
+            createEffect(() => {
+              el.value = str()
+              el.selectedIndex =
+                str() === '' ? 0 : props.modelOptions.findIndex((model) => model.id === str()) + 1
+            })
+          }
+          value={str()}
+          onChange={(e) =>
+            props.onChange(e.currentTarget.value === '' ? undefined : e.currentTarget.value)
+          }
+        >
+          <option value="" selected={str() === ''}>
+            Default
+          </option>
+          <For each={props.modelOptions}>
+            {(model) => (
+              <option value={model.id} selected={model.id === str()}>
+                {model.name} · {model.provider}
+              </option>
+            )}
+          </For>
+        </select>
+      )
+    }
+
     return (
       <input
         class="osp-input"
         type="text"
-        value={str}
+        value={str()}
         placeholder={
           props.field.placeholder ?? (props.field.default ? String(props.field.default) : undefined)
         }

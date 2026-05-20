@@ -314,7 +314,11 @@ export function CustomizationsModal(props: CustomizationsModalProps) {
                 </Show>
 
                 <Show when={activeType() === 'settings'}>
-                  <SettingsPane hasCwd={Boolean(props.cwd)} onError={props.onError} />
+                  <SettingsPane
+                    hasCwd={Boolean(props.cwd)}
+                    models={props.models}
+                    onError={props.onError}
+                  />
                 </Show>
                 <Show when={activeType() === 'general'}>
                   <GeneralPane onError={props.onError} themeItems={themeItems()} />
