@@ -1639,9 +1639,10 @@ ${contextPrefix}`
   ipcMain.handle(
     IPC.GIT_GENERATE_COMMIT_MSG,
     async (): Promise<import('../src/lib/ipc').GenerateCommitMessageResult | null> => {
-      if (!state?.cwd) return null
+      const cwd = activeWorkspacePath()
+      if (!cwd) return null
       const git = await getGitHost()
-      const status = await git.getGitStatus(state.cwd)
+      const status = await git.getGitStatus(cwd)
       const staged = status?.files.filter((f) => f.staged) ?? []
 
       // Try to retrieve agent context from the last assistant message

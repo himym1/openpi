@@ -358,11 +358,17 @@ export function GitPanel(props: GitPanelProps) {
 
   const handleGenerateCommitMessage = async () => {
     setIsGeneratingMsg(true)
+    setCommitError(null)
     try {
       const result = await window.openpi.git.generateCommitMessage()
-      if (result?.message) setCommitMessage(result.message)
+      if (result?.message) {
+        setCommitMessage(result.message)
+      } else {
+        setCommitError('Could not generate a commit message for the staged changes.')
+      }
     } catch (err) {
-      console.error('Failed to generate commit message:', err)
+      const message = err instanceof Error ? err.message : String(err)
+      setCommitError(`Failed to generate commit message: ${message}`)
     } finally {
       setIsGeneratingMsg(false)
     }
