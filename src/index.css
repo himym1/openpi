@@ -8343,7 +8343,7 @@ body.panel-dragging {
   bottom: 0;
   padding: 8px;
   border-top: 1px solid var(--hairline);
-  background: #07080a;
+  background: var(--surface-soft);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -8354,8 +8354,8 @@ body.panel-dragging {
   display: flex;
   flex-direction: column;
   min-height: 104px;
-  background: #090b0f;
-  border: 1px solid var(--hairline);
+  background: var(--surface-inset);
+  border: 1px solid var(--hairline-strong);
   border-radius: var(--r-xs);
   /* overflow: hidden removed — would clip the upward-opening sync popover */
 }
@@ -8370,6 +8370,7 @@ body.panel-dragging {
   font-size: 12px;
   line-height: 1.45;
   color: var(--ink);
+  caret-color: var(--accent);
   resize: none;
   /* clip textarea to top rounded corners of the composer */
   border-radius: var(--r-xs) var(--r-xs) 0 0;
@@ -8378,7 +8379,7 @@ body.panel-dragging {
   outline: none;
 }
 .git-commit-input::placeholder {
-  color: var(--ash);
+  color: var(--mute);
 }
 
 .git-commit-composer:focus-within {
@@ -8417,8 +8418,8 @@ body.panel-dragging {
     color 120ms;
 }
 .git-generate-msg-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--steel);
+  background: var(--surface-card);
+  color: var(--ink);
 }
 .git-generate-msg-btn:disabled {
   opacity: 0.45;
@@ -8442,9 +8443,9 @@ body.panel-dragging {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--hairline);
-  background: #2b2d31;
-  color: var(--steel);
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-card);
+  color: var(--ink-soft);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -8468,7 +8469,7 @@ body.panel-dragging {
 .git-commit-mode-menu-btn:hover:not(:disabled),
 .git-commit-mode-menu-btn.is-active,
 .git-commit-push-btn:hover:not(:disabled) {
-  background: #3a3d42;
+  background: var(--surface-raised);
   color: var(--ink);
 }
 .git-commit-mode-btn:disabled,
@@ -8485,10 +8486,10 @@ body.panel-dragging {
   z-index: 25;
   min-width: 190px;
   padding: 4px;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--hairline-strong);
   border-radius: var(--r-sm);
-  background: #17191d;
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.36);
+  background: var(--surface-inset);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
 }
 .git-commit-option-row {
   width: 100%;
@@ -8500,12 +8501,12 @@ body.panel-dragging {
   background: transparent;
   border: 0;
   border-radius: var(--r-xs);
-  color: var(--steel);
+  color: var(--ink-soft);
   cursor: pointer;
   text-align: left;
 }
 .git-commit-option-row:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--surface-card);
   color: var(--ink);
 }
 .git-commit-option-row strong {
