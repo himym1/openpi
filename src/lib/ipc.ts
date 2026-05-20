@@ -433,6 +433,7 @@ export const sessionHistoryMessageSchema = z.object({
   id: z.string(),
   role: z.enum(['user', 'assistant']),
   text: z.string(),
+  images: z.array(promptImageSchema).optional(),
   thinking: z.string().optional(),
   toolCards: z.array(sessionHistoryToolCardSchema),
   inputTokens: z.number().optional(),

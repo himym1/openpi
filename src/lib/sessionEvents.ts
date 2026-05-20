@@ -23,6 +23,7 @@ export function applySessionEvent(
             id: `u-${msg.timestamp ?? Date.now()}`,
             role: 'user',
             text: contentToText(msg.content),
+            images: contentToImages(msg.content),
             toolCards: [],
           },
         ]
@@ -251,6 +252,23 @@ function contentToText(content: unknown): string {
     .filter((part: unknown) => (part as { type?: string }).type === 'text')
     .map((part: unknown) => (part as { text?: string }).text ?? '')
     .join('')
+}
+
+function contentToImages(
+  content: unknown
+): Array<{ type: 'image'; mimeType: string; data: string }> {
+  if (!Array.isArray(content)) return []
+  return content.flatMap((part: unknown) => {
+    const record = part as { type?: unknown; mimeType?: unknown; data?: unknown }
+    if (
+      record.type === 'image' &&
+      typeof record.mimeType === 'string' &&
+      typeof record.data === 'string'
+    ) {
+      return [{ type: 'image' as const, mimeType: record.mimeType, data: record.data }]
+    }
+    return []
+  })
 }
 
 function resultText(result: unknown): string {

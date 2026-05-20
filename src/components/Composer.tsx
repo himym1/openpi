@@ -5,7 +5,6 @@ import {
   BookOpen,
   ChevronDown,
   Clock,
-  Image,
   MessageSquare,
   Paperclip,
   Plus,
@@ -450,10 +449,13 @@ const FileChip: Component<FileChipProps> = (props) => {
 type ImageChipProps = { image: PromptImage; index: number; onRemove: () => void }
 
 const ImageChip: Component<ImageChipProps> = (props) => (
-  <span class="ctx-chip" title={props.image.mimeType}>
-    <span class="ctx-chip-icon">
-      <Image size={11} />
-    </span>
+  <span class="ctx-chip image-chip" title={props.image.mimeType}>
+    <img
+      class="ctx-chip-image-thumb"
+      src={`data:${props.image.mimeType};base64,${props.image.data}`}
+      alt=""
+      aria-hidden="true"
+    />
     <span class="ctx-chip-name">Image {props.index + 1}</span>
     <button
       type="button"

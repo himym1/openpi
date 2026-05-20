@@ -67,12 +67,34 @@ type UserMessageProps = {
   onFork?: (id: string) => void
 }
 
+function MessageImages(props: { images?: Array<{ mimeType: string; data: string }> }) {
+  return (
+    <Show when={(props.images?.length ?? 0) > 0}>
+      <div class="message-image-grid">
+        <For each={props.images}>
+          {(image, index) => (
+            <img
+              class="message-image-preview"
+              src={`data:${image.mimeType};base64,${image.data}`}
+              alt={`Attachment ${index() + 1}`}
+              loading="lazy"
+            />
+          )}
+        </For>
+      </div>
+    </Show>
+  )
+}
+
 export const UserMessage: Component<UserMessageProps> = (props) => {
   return (
     <div class="message-row user-message-row">
       <div class="user-msg-stack">
         <div class="user-bubble">
-          <MarkdownContent text={props.message.text} />
+          <MessageImages images={props.message.images} />
+          <Show when={props.message.text}>
+            <MarkdownContent text={props.message.text} />
+          </Show>
         </div>
         <MessageActions
           messageId={props.message.id}
@@ -400,6 +422,8 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
             />
           )}
         </For>
+
+        <MessageImages images={props.message.images} />
 
         <Show when={props.message.text}>
           <MarkdownContent text={props.message.text} streaming={props.message.streaming} />

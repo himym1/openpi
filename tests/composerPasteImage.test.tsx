@@ -61,6 +61,20 @@ describe('Composer image paste', () => {
 
   afterEach(() => cleanup())
 
+  it('renders pasted image attachment previews', () => {
+    const { container } = render(() => (
+      <Composer
+        {...baseProps}
+        attachedImages={[{ type: 'image', mimeType: 'image/png', data: 'AQID' }]}
+        onAddImages={vi.fn()}
+        onRemoveImage={vi.fn()}
+      />
+    ))
+
+    const preview = container.querySelector('.ctx-chip-image-thumb') as HTMLImageElement | null
+    expect(preview?.src).toContain('data:image/png;base64,AQID')
+  })
+
   it('converts pasted image clipboard items into prompt image attachments', async () => {
     const onAddImages = vi.fn()
     const onRemoveImage = vi.fn()

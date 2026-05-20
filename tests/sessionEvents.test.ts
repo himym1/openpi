@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import { applySessionEvent, formatCompactionEndText } from '../src/lib/sessionEvents'
 
+describe('session event rendering', () => {
+  it('preserves user image attachments from message_start events', () => {
+    const messages = applySessionEvent([], {
+      type: 'message_start',
+      message: {
+        role: 'user',
+        timestamp: 1,
+        content: [
+          { type: 'text', text: 'Please analyze this image.' },
+          { type: 'image', mimeType: 'image/png', data: 'AQID' },
+        ],
+      },
+    })
+
+    expect(messages[0]).toMatchObject({
+      role: 'user',
+      text: 'Please analyze this image.',
+      images: [{ type: 'image', mimeType: 'image/png', data: 'AQID' }],
+    })
+  })
+})
+
 describe('compaction event rendering', () => {
   it('describes tokensBefore as the pre-compaction context size', () => {
     expect(formatCompactionEndText({ result: { tokensBefore: 272_792 } })).toBe(

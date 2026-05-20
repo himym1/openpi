@@ -1009,6 +1009,23 @@ function contentToText(content: unknown): string {
   return ''
 }
 
+function contentToImages(
+  content: unknown
+): Array<{ type: 'image'; mimeType: string; data: string }> {
+  if (!Array.isArray(content)) return []
+  return content.flatMap((part) => {
+    const record = part as { type?: unknown; mimeType?: unknown; data?: unknown }
+    if (
+      record.type === 'image' &&
+      typeof record.mimeType === 'string' &&
+      typeof record.data === 'string'
+    ) {
+      return [{ type: 'image' as const, mimeType: record.mimeType, data: record.data }]
+    }
+    return []
+  })
+}
+
 function numeric(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
@@ -1085,6 +1102,7 @@ function appendHistoryEntry(
       id: entry.id,
       role: 'user',
       text: contentToText(message.content),
+      images: contentToImages(message.content),
       toolCards: [],
     })
     return
