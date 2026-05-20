@@ -458,6 +458,35 @@ function createRequestId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
+function buildCommitMessagePrompt(
+  context: GitHost.StagedCommitContext,
+  fallbackMessage: string
+): string {
+  return `Generate a concise Conventional Commit message for the staged changes below.
+
+Rules:
+- Return only the commit message; no markdown fences and no explanation.
+- Subject must be <= 72 characters when possible.
+- Use one of: feat, fix, docs, style, refactor, test, chore, build, ci.
+- Include a scope only when it is obvious from the change.
+- Add a body only when the why/risk is important.
+- Do not describe raw file counts like "add 1 file" unless that is the actual user-visible change.
+- Prefer what changed and why over counting files.
+
+Heuristic fallback, for reference only:
+${fallbackMessage || '(none)'}
+
+Staged file summary:
+${context.stat || '(none)'}
+
+Staged name-status:
+${context.nameStatus || '(none)'}
+
+Staged diff${context.truncated ? ' (truncated)' : ''}:
+${context.diff || '(diff unavailable)'}
+`
+}
+
 function requirePiSidecar(): PiSidecarHost {
   return ensurePiSidecarStarted()
 }
@@ -1665,8 +1694,28 @@ ${contextPrefix}`
         }
       }
 
-      const message = git.generateCommitMessage(staged, agentContext)
-      return { message }
+      const fallbackMessage = git.generateCommitMessage(staged, agentContext)
+      if (staged.length === 0) return { message: fallbackMessage }
+
+      try {
+        const commitContext = await git.getStagedCommitContext(cwd)
+        const requestId = createRequestId()
+        const response = await requirePiSidecar().request<{
+          type: 'commit_message_result'
+          requestId: string
+          message: string | null
+        }>(
+          {
+            type: 'generate_commit_message',
+            requestId,
+            prompt: buildCommitMessagePrompt(commitContext, fallbackMessage),
+          },
+          75_000
+        )
+        return { message: response.message?.trim() || fallbackMessage }
+      } catch {
+        return { message: fallbackMessage }
+      }
     }
   )
 

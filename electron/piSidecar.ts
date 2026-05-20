@@ -11,6 +11,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { completeSimple } from '@earendil-works/pi-ai'
 import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 import {
   AuthStorage,
@@ -51,6 +52,7 @@ export type SidecarCommand =
   | { type: 'set_thinking'; level: string }
   | { type: 'get_stats'; requestId: string }
   | { type: 'get_models'; requestId: string }
+  | { type: 'generate_commit_message'; requestId: string; prompt: string }
   | { type: 'execute_bash'; requestId: string; command: string; excludeFromContext?: boolean }
   | { type: 'set_session_name'; name: string }
   | { type: 'fork_session'; entryId: string; requestId?: string }
@@ -73,6 +75,7 @@ export type SidecarMessage =
   | { type: 'session_index_updated' }
   | { type: 'stats_result'; requestId: string; stats: Record<string, unknown> }
   | { type: 'models_result'; requestId: string; models: unknown[] }
+  | { type: 'commit_message_result'; requestId: string; message: string | null }
   | { type: 'bash_result'; requestId: string; result: unknown }
   | { type: 'settings_result'; requestId: string; result: unknown }
   | { type: 'providers_result'; requestId: string; providers: unknown[] }
@@ -416,6 +419,47 @@ async function startSession(
   send({ type: 'session_ready', requestId: opts.requestId, payload })
 }
 
+function extractAssistantText(message: unknown): string {
+  const content = (message as { content?: unknown })?.content
+  if (typeof content === 'string') return content.trim()
+  if (!Array.isArray(content)) return ''
+  return content
+    .map((block) => {
+      if (block && typeof block === 'object' && 'text' in block) {
+        const text = (block as { text?: unknown }).text
+        return typeof text === 'string' ? text : ''
+      }
+      return ''
+    })
+    .join('')
+    .trim()
+}
+
+async function generateCommitMessageFromPrompt(prompt: string): Promise<string | null> {
+  if (!state?.session.model) return null
+  const model = state.session.model
+  const registry = getModelRegistry()
+  const auth = await registry.getApiKeyAndHeaders(model)
+  if (!auth.ok) throw new Error(auth.error)
+
+  const response = await completeSimple(
+    model,
+    {
+      systemPrompt:
+        'You write concise, accurate Conventional Commit messages from staged git diffs. Return only the commit message, no markdown fences, no commentary.',
+      messages: [{ role: 'user', content: prompt, timestamp: Date.now() }],
+    },
+    {
+      apiKey: auth.apiKey,
+      headers: auth.headers,
+      timeoutMs: 45_000,
+      maxRetries: 1,
+    }
+  )
+  const text = extractAssistantText(response)
+  return text || null
+}
+
 // ─── Command handler ────────────────────────────────────────────────────────────
 
 parentPort.on('message', (message) => {
@@ -695,6 +739,12 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
         contextWindow: m.contextWindow ?? 0,
       }))
       send({ type: 'models_result', requestId: cmd.requestId, models: mapped })
+      break
+    }
+
+    case 'generate_commit_message': {
+      const message = await generateCommitMessageFromPrompt(cmd.prompt)
+      send({ type: 'commit_message_result', requestId: cmd.requestId, message })
       break
     }
 

@@ -983,6 +983,37 @@ export function searchFileContents(
 
 // ─── Commit message generation ────────────────────────────────────────────
 
+export type StagedCommitContext = {
+  stat: string
+  nameStatus: string
+  diff: string
+  truncated: boolean
+}
+
+function truncateCommitDiff(value: string, maxChars: number): { text: string; truncated: boolean } {
+  if (value.length <= maxChars) return { text: value, truncated: false }
+  const head = value.slice(0, Math.floor(maxChars * 0.62))
+  const tail = value.slice(value.length - Math.floor(maxChars * 0.33))
+  return {
+    text: `${head}\n\n[diff truncated: ${value.length - head.length - tail.length} chars omitted]\n\n${tail}`,
+    truncated: true,
+  }
+}
+
+export async function getStagedCommitContext(
+  cwd: string,
+  maxDiffChars = 18_000
+): Promise<StagedCommitContext> {
+  const git = simpleGit({ baseDir: cwd })
+  const [stat, nameStatus, rawDiff] = await Promise.all([
+    git.raw(['diff', '--cached', '--stat']).catch(() => ''),
+    git.raw(['diff', '--cached', '--name-status']).catch(() => ''),
+    git.raw(['diff', '--cached', '--no-ext-diff', '--unified=80']).catch(() => ''),
+  ])
+  const { text: diff, truncated } = truncateCommitDiff(rawDiff.trim(), maxDiffChars)
+  return { stat: stat.trim(), nameStatus: nameStatus.trim(), diff, truncated }
+}
+
 /**
  * Generates a conventional commit message from staged files.
  * Uses agent context (last Pi assistant message summary) when available
