@@ -560,6 +560,7 @@ export function useOpenPiSession() {
       }
     }
 
+    setError(null)
     setInput('')
     if (textareaEl) textareaEl.style.height = 'auto'
     markLocalActivity()
