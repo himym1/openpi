@@ -1014,6 +1014,48 @@ export async function getStagedCommitContext(
   return { stat: stat.trim(), nameStatus: nameStatus.trim(), diff, truncated }
 }
 
+export function buildCommitMessagePrompt(
+  context: StagedCommitContext,
+  fallbackMessage: string
+): string {
+  return `You are a conservative Git commit message assistant for a solo developer.
+
+Generate one directly usable Conventional Commit message for the staged changes below.
+
+Safe-commit style rules:
+- Use only staged diff/name-status/stat.
+- Ignore unstaged and untracked files.
+- Follow repository language rules.
+- If the repo requires Chinese commit messages, write the summary in Chinese.
+- Otherwise use the repository's existing commit language and Conventional Commit style.
+- Do not translate file names, branch names, package names, paths, or technical identifiers.
+- Be conservative. Do not overclaim. If unsure, use a narrower summary.
+- Return only the final commit message; no markdown fences, candidates, reasons, or commentary.
+
+Message rules:
+- Subject must be <= 72 characters when possible.
+- Use one of: feat, fix, docs, style, refactor, test, chore, build, ci.
+- Include a scope only when it is obvious from the change.
+- Add a body only when the why/risk is important.
+- Prefer semantic intent over file counts.
+- Never write "add N files/remove N files" unless the staged change is only file inventory cleanup.
+- If docs are added/removed, infer what the docs represent from filenames and diff content.
+- If changes look unrelated, choose the dominant staged intent; do not invent details.
+
+Heuristic fallback, for reference only:
+${fallbackMessage || '(none)'}
+
+Staged file summary:
+${context.stat || '(none)'}
+
+Staged name-status:
+${context.nameStatus || '(none)'}
+
+Staged diff${context.truncated ? ' (truncated)' : ''}:
+${context.diff || '(diff unavailable)'}
+`
+}
+
 /**
  * Generates a conventional commit message from staged files.
  * Uses agent context (last Pi assistant message summary) when available
