@@ -52,7 +52,7 @@ export type SidecarCommand =
   | { type: 'set_thinking'; level: string }
   | { type: 'get_stats'; requestId: string }
   | { type: 'get_models'; requestId: string }
-  | { type: 'generate_commit_message'; requestId: string; prompt: string }
+  | { type: 'generate_commit_message'; requestId: string; prompt: string; cwd?: string }
   | { type: 'execute_bash'; requestId: string; command: string; excludeFromContext?: boolean }
   | { type: 'set_session_name'; name: string }
   | { type: 'fork_session'; entryId: string; requestId?: string }
@@ -435,9 +435,32 @@ function extractAssistantText(message: unknown): string {
     .trim()
 }
 
-async function generateCommitMessageFromPrompt(prompt: string): Promise<string | null> {
-  if (!state?.session.model) return null
-  const model = state.session.model
+function selectCommitMessageModel(cwd?: string) {
+  if (state?.session.model) return state.session.model
+
+  const registry = getModelRegistry()
+  const settingsManager = SettingsManager.create(cwd ?? process.cwd(), getAgentDir())
+  const defaultProvider = settingsManager.getDefaultProvider()
+  const defaultModelId = settingsManager.getDefaultModel()
+
+  if (defaultModelId) {
+    if (defaultProvider) {
+      const model = registry.find(defaultProvider, defaultModelId)
+      if (model && registry.hasConfiguredAuth(model)) return model
+    }
+    const model = registry.getAvailable().find((candidate) => candidate.id === defaultModelId)
+    if (model) return model
+  }
+
+  return registry.getAvailable()[0] ?? null
+}
+
+async function generateCommitMessageFromPrompt(
+  prompt: string,
+  cwd?: string
+): Promise<string | null> {
+  const model = selectCommitMessageModel(cwd)
+  if (!model) return null
   const registry = getModelRegistry()
   const auth = await registry.getApiKeyAndHeaders(model)
   if (!auth.ok) throw new Error(auth.error)
@@ -743,7 +766,7 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     }
 
     case 'generate_commit_message': {
-      const message = await generateCommitMessageFromPrompt(cmd.prompt)
+      const message = await generateCommitMessageFromPrompt(cmd.prompt, cmd.cwd)
       send({ type: 'commit_message_result', requestId: cmd.requestId, message })
       break
     }

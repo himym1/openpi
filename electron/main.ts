@@ -1708,6 +1708,7 @@ ${contextPrefix}`
           {
             type: 'generate_commit_message',
             requestId,
+            cwd,
             prompt: buildCommitMessagePrompt(commitContext, fallbackMessage),
           },
           75_000
