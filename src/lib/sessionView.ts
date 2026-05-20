@@ -38,14 +38,11 @@ export const TOOL_LABEL: Record<string, string> = {
   TaskExecute: 'exec',
   TaskOutput: 'task',
   TaskStop: 'stop',
-  // Harness extension tools
-  harness_status: 'harness',
-  harness_intake: 'harness',
-  harness_init: 'harness',
-  harness_lint: 'harness',
-  story_create: 'story',
-  decision_record: 'decision',
-  test_matrix_update: 'matrix',
+  // Goal/plan tools
+  get_goal: 'goal',
+  create_goal: 'goal',
+  update_goal: 'goal',
+  update_plan: 'plan',
   // Ask / question tool
   ask_user_question: 'ask',
   // Legacy spec compatibility tools

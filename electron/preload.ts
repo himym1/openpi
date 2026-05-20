@@ -37,11 +37,13 @@ import type {
   PiSettings,
   PiUpdateCheckResult,
   PiUpdateInstallResult,
+  PlanUpdate,
   PromptTemplate,
   ProviderInfo,
   ProviderLoginEvent,
   PtyData,
   PtyExit,
+  RemoteSessionUpdate,
   SessionError,
   SessionEvent,
   SessionHistoryPage,
@@ -55,6 +57,7 @@ import type {
   SkillItem,
   ThemeColors,
   ThemeTokens,
+  WorkbenchContextPayload,
   WorkspaceInfo,
   WorkspaceSummaryInfo,
   WorkspaceTrustResult,
@@ -199,10 +202,26 @@ const api = {
     check: (): Promise<AppUpdateStatus> => ipcRenderer.invoke(IPC.APP_UPDATE_CHECK),
     openRelease: (url: string): Promise<void> =>
       ipcRenderer.invoke(IPC.APP_UPDATE_OPEN_RELEASE, { url }),
+    install: (): Promise<void> => ipcRenderer.invoke(IPC.APP_UPDATE_INSTALL),
     onStatus: (cb: (status: AppUpdateStatus) => void): (() => void) => {
       const handler = (_e: Electron.IpcRendererEvent, status: AppUpdateStatus) => cb(status)
       ipcRenderer.on(IPC.APP_UPDATE_STATUS, handler)
       return () => ipcRenderer.removeListener(IPC.APP_UPDATE_STATUS, handler)
+    },
+  },
+  // ── Workbench context bridge ─────────────────────────────────────────────
+  workbenchContext: {
+    update: (payload: {
+      visibleFile: string | null
+      visibleFileAbs: string | null
+      terminalOutput: string | null
+    }): void => ipcRenderer.send(IPC.WORKBENCH_CONTEXT_UPDATE, payload),
+    get: (): Promise<WorkbenchContextPayload> => ipcRenderer.invoke(IPC.WORKBENCH_CONTEXT_GET),
+    onChange: (cb: (context: WorkbenchContextPayload) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, context: WorkbenchContextPayload) =>
+        cb(context)
+      ipcRenderer.on('openpi:workbench-context-changed', handler)
+      return () => ipcRenderer.removeListener('openpi:workbench-context-changed', handler)
     },
   },
   getChangelog: (): Promise<string | null> => ipcRenderer.invoke(IPC.GET_CHANGELOG),
@@ -278,6 +297,8 @@ const api = {
     ipcRenderer.invoke(IPC.READ_FILE, { path: relPath }),
   writeFile: (relPath: string, content: string): Promise<void> =>
     ipcRenderer.invoke(IPC.WRITE_FILE, { path: relPath, content }),
+  deleteFile: (relPath: string): Promise<{ trashed: boolean }> =>
+    ipcRenderer.invoke(IPC.DELETE_FILE, { path: relPath }),
   formatFile: (relPath: string): Promise<string> =>
     ipcRenderer.invoke(IPC.FORMAT_FILE, { path: relPath }),
   listPromptTemplates: (): Promise<PromptTemplate[]> =>
@@ -387,6 +408,48 @@ const api = {
     const handler = () => cb()
     ipcRenderer.on(IPC.SESSION_INDEX_UPDATED, handler)
     return () => ipcRenderer.removeListener(IPC.SESSION_INDEX_UPDATED, handler)
+  },
+
+  onRemoteSessionStatus: (
+    cb: (payload: {
+      app: string
+      status: string
+      pid: number
+      workspace?: string
+      sessionFile?: string | null
+    }) => void
+  ) => {
+    const handler = (
+      _: Electron.IpcRendererEvent,
+      payload: {
+        app: string
+        status: string
+        pid: number
+        workspace?: string
+        sessionFile?: string | null
+      }
+    ) => cb(payload)
+    ipcRenderer.on(IPC.REMOTE_SESSION_STATUS, handler)
+    return () => ipcRenderer.removeListener(IPC.REMOTE_SESSION_STATUS, handler)
+  },
+
+  onRemoteSessionUpdate: (cb: (payload: RemoteSessionUpdate) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, payload: RemoteSessionUpdate) => cb(payload)
+    ipcRenderer.on(IPC.REMOTE_SESSION_UPDATE, handler)
+    return () => ipcRenderer.removeListener(IPC.REMOTE_SESSION_UPDATE, handler)
+  },
+
+  onGoalUpdate: (cb: (payload: import('../src/lib/ipc').GoalUpdate) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, payload: import('../src/lib/ipc').GoalUpdate) =>
+      cb(payload)
+    ipcRenderer.on(IPC.GOAL_UPDATE, handler)
+    return () => ipcRenderer.removeListener(IPC.GOAL_UPDATE, handler)
+  },
+
+  onPlanUpdate: (cb: (payload: PlanUpdate) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, payload: PlanUpdate) => cb(payload)
+    ipcRenderer.on(IPC.PLAN_UPDATE, handler)
+    return () => ipcRenderer.removeListener(IPC.PLAN_UPDATE, handler)
   },
 } as const
 

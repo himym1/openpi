@@ -37,6 +37,7 @@ import type {
   PiUpdateInstallResult,
   PromptTemplate,
   ProviderInfo,
+  RemoteSessionUpdate,
   SessionHistoryPage,
   SessionListItem,
   SessionReady,
@@ -54,6 +55,8 @@ import {
   archiveSessionsRequestSchema,
   customizationsInventorySchema,
   customProviderSchema,
+  deleteFileRequestSchema,
+  deleteFileResultSchema,
   deleteSessionsRequestSchema,
   diagnosticsBundleSchema,
   fffFileSearchRequestSchema,
@@ -81,6 +84,7 @@ import {
   gitSyncResultSchema,
   gitSyncSchema,
   gitUnstageSchema,
+  goalUpdateSchema,
   IPC,
   listDirectoryRequestSchema,
   loginProviderSchema,
@@ -93,6 +97,7 @@ import {
   pathProtectionResultSchema,
   piUpdateCheckResultSchema,
   piUpdateInstallResultSchema,
+  planUpdateSchema,
   playSoundEffectSchema,
   promptTemplateSchema,
   ptyCloseSchema,
@@ -119,6 +124,7 @@ import {
   setThinkingSchema,
   skillItemSchema,
   unarchiveSessionsRequestSchema,
+  workbenchContextSchema,
   workspaceSummaryInfoSchema,
   workspaceSummaryRequestSchema,
   workspaceTrustRequestSchema,
@@ -150,7 +156,21 @@ import { checkProtectedPath, filterBlockedPaths } from './protectedPaths'
 import { redactObject } from './secretRedact'
 import { SessionIndexStore } from './sessionIndex'
 import { getSettings, saveSettings as writeSettings } from './settingsHost'
-import { checkForAppUpdate, openReleasePage, readChangelog } from './updater'
+import {
+  checkForAppUpdate,
+  initAutoUpdater,
+  openReleasePage,
+  quitAndInstall,
+  readChangelog,
+} from './updater'
+import {
+  bindWebContents,
+  buildWorkbenchContextPrefix,
+  getWorkbenchContext,
+  updateTerminalOutput,
+  updateVisibleFile,
+  type WorkbenchContext,
+} from './workbenchContext'
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -997,21 +1017,42 @@ function registerHandlers(): void {
     const active = await ensureActiveSession()
     if (!active) return
     const { text, contextPrefix } = sessionPromptSchema.parse(raw)
-    requirePiSidecar().send({ type: 'prompt', text, contextPrefix })
+    requirePiSidecar().send({
+      type: 'prompt',
+      text,
+      contextPrefix: injectWorkbenchPrefix(contextPrefix),
+    })
   })
+
+  function injectWorkbenchPrefix(contextPrefix?: string): string | undefined {
+    const wbPrefix = buildWorkbenchContextPrefix()
+    if (!wbPrefix) return contextPrefix
+    return contextPrefix
+      ? `${wbPrefix}
+${contextPrefix}`
+      : wbPrefix
+  }
 
   ipcMain.handle(IPC.SESSION_STEER, async (_event, raw: unknown) => {
     const active = await ensureActiveSession()
     if (!active) return
     const { text, contextPrefix } = sessionPromptSchema.parse(raw)
-    requirePiSidecar().send({ type: 'steer', text, contextPrefix })
+    requirePiSidecar().send({
+      type: 'steer',
+      text,
+      contextPrefix: injectWorkbenchPrefix(contextPrefix),
+    })
   })
 
   ipcMain.handle(IPC.SESSION_FOLLOW_UP, async (_event, raw: unknown) => {
     const active = await ensureActiveSession()
     if (!active) return
     const { text, contextPrefix } = sessionPromptSchema.parse(raw)
-    requirePiSidecar().send({ type: 'follow_up', text, contextPrefix })
+    requirePiSidecar().send({
+      type: 'follow_up',
+      text,
+      contextPrefix: injectWorkbenchPrefix(contextPrefix),
+    })
   })
 
   ipcMain.handle(
@@ -1055,6 +1096,18 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.SESSION_ABORT, async () => {
     if (!state) return
     requirePiSidecar().send({ type: 'abort' })
+  })
+
+  // ── Workbench context (ToolContext pattern) ────────────────────────────────
+
+  ipcMain.on(IPC.WORKBENCH_CONTEXT_UPDATE, (_event, raw: unknown): void => {
+    const payload = workbenchContextSchema.parse(raw)
+    updateVisibleFile(payload.visibleFile, payload.visibleFileAbs)
+    updateTerminalOutput(payload.terminalOutput)
+  })
+
+  ipcMain.handle(IPC.WORKBENCH_CONTEXT_GET, (): WorkbenchContext => {
+    return getWorkbenchContext()
   })
 
   ipcMain.handle(IPC.GET_MODELS, async (): Promise<ModelInfo[]> => {
@@ -1391,6 +1444,10 @@ function registerHandlers(): void {
     openReleasePage(url)
   })
 
+  ipcMain.handle(IPC.APP_UPDATE_INSTALL, (): void => {
+    quitAndInstall()
+  })
+
   ipcMain.handle(IPC.GET_CHANGELOG, (): string | null => {
     return readChangelog()
   })
@@ -1619,13 +1676,31 @@ function registerHandlers(): void {
     }
   )
 
+  const resolveWorkspaceRelativePath = (relPath: string, action: string): string => {
+    if (!state?.cwd) throw new Error('No active workspace')
+    const full = path.resolve(state.cwd, relPath)
+    const sep = path.sep
+    if (full === state.cwd || !full.startsWith(state.cwd + sep)) {
+      throw new Error(`Refusing to ${action} outside workspace`)
+    }
+    return full
+  }
+
+  const isGitMetadataPath = (relPath: string): boolean => {
+    const parts = relPath.split(/[\\/]+/).filter(Boolean)
+    return parts.includes('.git')
+  }
+
   ipcMain.handle(IPC.READ_FILE, (_event, raw: unknown): FileContent | null => {
     if (!state?.cwd) return null
     const { path: relPath } = readFileRequestSchema.parse(raw)
     // Validate path stays inside workspace (no directory traversal)
-    const full = path.resolve(state.cwd, relPath)
-    const sep = path.sep
-    if (full !== state.cwd && !full.startsWith(state.cwd + sep)) return null
+    let full: string
+    try {
+      full = resolveWorkspaceRelativePath(relPath, 'read')
+    } catch {
+      return null
+    }
     try {
       const raw = fs.readFileSync(full, 'utf-8')
       const size = Buffer.byteLength(raw, 'utf-8')
@@ -1642,11 +1717,7 @@ function registerHandlers(): void {
   ipcMain.handle(IPC.WRITE_FILE, async (_event, raw: unknown): Promise<void> => {
     if (!state?.cwd) throw new Error('No active workspace')
     const { path: relPath, content } = writeFileRequestSchema.parse(raw)
-    const full = path.resolve(state.cwd, relPath)
-    const sep = path.sep
-    if (full !== state.cwd && !full.startsWith(state.cwd + sep)) {
-      throw new Error('Refusing to write outside workspace')
-    }
+    const full = resolveWorkspaceRelativePath(relPath, 'write')
     const violation = checkProtectedPath(full, state.cwd)
     if (violation?.level === 'hard') {
       throw new Error(`Refusing to write protected path: ${violation.reason}`)
@@ -1660,6 +1731,47 @@ function registerHandlers(): void {
       if (!approved) return
     }
     fs.writeFileSync(full, content, 'utf-8')
+  })
+
+  ipcMain.handle(IPC.DELETE_FILE, async (event, raw: unknown): Promise<unknown> => {
+    if (!state?.cwd) throw new Error('No active workspace')
+    const { path: relPath } = deleteFileRequestSchema.parse(raw)
+    const full = resolveWorkspaceRelativePath(relPath, 'delete')
+
+    if (isGitMetadataPath(relPath)) {
+      throw new Error('Refusing to delete Git metadata')
+    }
+
+    const violation = checkProtectedPath(full, state.cwd)
+    if (violation && violation.level !== 'soft') {
+      throw new Error(`Refusing to delete protected path: ${violation.reason}`)
+    }
+
+    const stat = fs.statSync(full)
+    const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow
+    const confirmOptions = {
+      type: 'warning' as const,
+      buttons: ['Move to Trash', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      title: `Delete ${stat.isDirectory() ? 'folder' : 'file'}?`,
+      message: `Move ${path.basename(full)} to Trash?`,
+      detail: relPath,
+    }
+    const { response } = parentWindow
+      ? await dialog.showMessageBox(parentWindow, confirmOptions)
+      : await dialog.showMessageBox(confirmOptions)
+    if (response !== 0) return deleteFileResultSchema.parse({ trashed: false })
+
+    await shell.trashItem(full)
+    mainWindow?.webContents.send(IPC.FILE_TREE_CHANGED)
+    try {
+      const git = await getGitHost()
+      mainWindow?.webContents.send(IPC.GIT_STATUS_CHANGED, await git.getGitStatus(state.cwd))
+    } catch {
+      // Git status refresh is best-effort; the file-tree refresh above is authoritative here.
+    }
+    return deleteFileResultSchema.parse({ trashed: true })
   })
 
   // ── Format file with Biome ───────────────────────────────────────────────────
@@ -2214,17 +2326,196 @@ app.whenReady().then(() => {
   registerHandlers()
   createWindow()
 
+  // ── Auto-updater ─────────────────────────────────────────────────────────
+  initAutoUpdater(mainWindow)
+
+  // ── Workbench context bridge ─────────────────────────────────────────────
+  if (mainWindow) bindWebContents(mainWindow.webContents)
+
+  // ── Pi TUI ↔ OpenPi sync bridge watcher ──────────────────────────────────
+  // Monitors the shared status file written by the openpi-bridge extension
+  // loaded by Pi TUI (or another Pi process). When available, watches the
+  // remote Pi session JSONL file from Electron main and forwards parsed pages
+  // to the renderer without giving the renderer filesystem authority.
+  const syncFile = path.join(os.homedir(), '.pi', 'agent', '.openpi-sync.json')
+  const sessionRoot = path.join(os.homedir(), '.pi', 'agent', 'sessions')
+  let remoteRunning = false
+  let remoteSessionFile: string | null = null
+  let remoteSessionMtime = 0
+  let remoteSessionSize = 0
+  let remoteSessionReadInFlight = false
+
+  function normalizeRemoteSessionFile(value: unknown): string | null {
+    if (typeof value !== 'string' || !value) return null
+    const resolved = path.resolve(value)
+    const root = path.resolve(sessionRoot)
+    if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return null
+    return resolved
+  }
+
+  async function emitRemoteSessionUpdate(sessionFile: string, force = false) {
+    if (!sessionIndex || remoteSessionReadInFlight) return
+    let stats: ReturnType<typeof fs.statSync>
+    try {
+      stats = fs.statSync(sessionFile)
+    } catch {
+      return
+    }
+
+    if (!force && stats.mtimeMs === remoteSessionMtime && stats.size === remoteSessionSize) return
+    remoteSessionMtime = stats.mtimeMs
+    remoteSessionSize = stats.size
+    remoteSessionReadInFlight = true
+    try {
+      const page = await sessionIndex.getSessionMessages(sessionFile, { limit: 120 })
+      const payload: RemoteSessionUpdate = {
+        ...page,
+        sessionFile,
+        updatedAt: Date.now(),
+      }
+      mainWindow?.webContents.send(IPC.REMOTE_SESSION_UPDATE, payload)
+    } finally {
+      remoteSessionReadInFlight = false
+    }
+  }
+
+  async function checkSyncFile() {
+    try {
+      const raw = fs.readFileSync(syncFile, 'utf-8')
+      const data = JSON.parse(raw) as {
+        pid?: number
+        app?: string
+        status?: string
+        workspace?: string
+        sessionFile?: string | null
+        timestamp?: number
+      }
+      // Ignore our own sidecar process; if it overwrote a previous remote
+      // status, clear the remote mirror rather than leaving stale Pi TUI UI.
+      if (data.pid && piSidecarHost?.workerPid === data.pid) {
+        if (remoteRunning) {
+          mainWindow?.webContents.send(IPC.REMOTE_SESSION_STATUS, {
+            app: data.app ?? 'openpi',
+            status: 'idle',
+            pid: data.pid,
+            sessionFile: null,
+          })
+        }
+        remoteRunning = false
+        remoteSessionFile = null
+        remoteSessionMtime = 0
+        remoteSessionSize = 0
+        return
+      }
+
+      const isStale = Boolean(data.timestamp && Date.now() - data.timestamp > 10_000)
+      const nextSessionFile = normalizeRemoteSessionFile(data.sessionFile)
+
+      if (isStale || data.status !== 'running' || !data.pid) {
+        if (!isStale && nextSessionFile) await emitRemoteSessionUpdate(nextSessionFile)
+        if (remoteRunning) {
+          mainWindow?.webContents.send(IPC.REMOTE_SESSION_STATUS, {
+            app: data.app ?? 'pi-tui',
+            status: 'idle',
+            pid: data.pid ?? 0,
+            sessionFile: nextSessionFile,
+          })
+        }
+        remoteRunning = false
+        remoteSessionFile = nextSessionFile
+        remoteSessionMtime = 0
+        remoteSessionSize = 0
+        return
+      }
+
+      const sessionFileChanged = remoteSessionFile !== nextSessionFile
+      remoteRunning = true
+      remoteSessionFile = nextSessionFile
+      mainWindow?.webContents.send(IPC.REMOTE_SESSION_STATUS, {
+        app: data.app ?? 'pi-tui',
+        status: 'running',
+        pid: data.pid,
+        workspace: data.workspace,
+        sessionFile: nextSessionFile,
+      })
+
+      if (nextSessionFile) await emitRemoteSessionUpdate(nextSessionFile, sessionFileChanged)
+    } catch {
+      // file doesn't exist yet or parse error — ignore
+    }
+  }
+
+  const syncWatchTimer = setInterval(() => {
+    void checkSyncFile()
+  }, 1_000)
+  // Initial check
+  setTimeout(() => {
+    void checkSyncFile()
+  }, 500)
+
+  // ── Goal state file watcher ────────────────────────────────────────────
+  // Monitors the goal state file written by the harness extension and
+  // forwards updates to the renderer for the GoalStatusIndicator.
+  const goalFile = path.join(os.homedir(), '.pi', 'agent', '.openpi-goal.json')
+  let lastGoalChecksum = ''
+
+  function checkGoalFile() {
+    try {
+      const raw = fs.readFileSync(goalFile, 'utf-8')
+      if (raw === lastGoalChecksum) return
+      lastGoalChecksum = raw
+      const parsed = JSON.parse(raw)
+      const update = goalUpdateSchema.parse(parsed)
+      mainWindow?.webContents.send(IPC.GOAL_UPDATE, update)
+    } catch {
+      // file doesn't exist or parse error — ignore
+    }
+  }
+
+  const goalWatchTimer = setInterval(checkGoalFile, 1_000)
+  setTimeout(checkGoalFile, 600)
+
+  // ── Plan state file watcher ────────────────────────────────────────────
+  // Monitors the plan state file written by the harness extension and
+  // forwards updates to the renderer for any global plan surfaces.
+  const planFile = path.join(os.homedir(), '.pi', 'agent', '.openpi-plan.json')
+  let lastPlanChecksum = ''
+
+  function checkPlanFile() {
+    try {
+      const raw = fs.readFileSync(planFile, 'utf-8')
+      if (raw === lastPlanChecksum) return
+      lastPlanChecksum = raw
+      const parsed = JSON.parse(raw)
+      const update = planUpdateSchema.parse(parsed)
+      mainWindow?.webContents.send(IPC.PLAN_UPDATE, update)
+    } catch {
+      // file doesn't exist or parse error — ignore
+    }
+  }
+
+  const planWatchTimer = setInterval(checkPlanFile, 1_000)
+  setTimeout(checkPlanFile, 650)
+
+  // Cleanup on app quit
+  const stopSyncWatch = () => {
+    clearInterval(syncWatchTimer)
+    clearInterval(goalWatchTimer)
+    clearInterval(planWatchTimer)
+    remoteRunning = false
+    remoteSessionFile = null
+  }
+  app.on('quit', stopSyncWatch)
+
   // Cold-start app update check — runs after window is created so the
   // renderer is ready to receive APP_UPDATE_STATUS when it subscribes.
   // Delay slightly to not compete with session startup IPC.
+  // Auto-updater already forwards status via initAutoUpdater listener.
+  // This just triggers the deferred startup check.
   setTimeout(() => {
-    void checkForAppUpdate()
-      .then((status) => {
-        mainWindow?.webContents.send(IPC.APP_UPDATE_STATUS, appUpdateStatusSchema.parse(status))
-      })
-      .catch(() => {
-        /* silently ignore network errors on startup */
-      })
+    void checkForAppUpdate().catch(() => {
+      /* silently ignore network errors on startup */
+    })
   }, 3000)
 })
 

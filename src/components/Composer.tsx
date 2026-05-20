@@ -44,7 +44,7 @@ import {
   type KeybindingOverrides,
   loadCustomKeybindings,
 } from '../lib/keybindings'
-import { GoalBanner } from './GoalBanner'
+import { GoalBanner, type GoalProgress, type GoalStep } from './GoalBanner'
 
 type QueueMode = 'prompt' | 'steer' | 'followup'
 
@@ -106,10 +106,14 @@ type ComposerProps = {
   onAbort: () => void
   // Goal state
   activeGoalText: string | null
-  activeGoalStep: 'running' | 'idle' | null
+  activeGoalStep: GoalStep
+  activeGoalElapsed: number | null
+  activeGoalProgress: GoalProgress | null
   onSetActiveGoal: (text: string | null) => void
   /** 0-100 percentage of context window consumed. Null when unknown. */
   contextPercent?: number | null
+  /** Last completed agent run tokens-per-second, Pi-compatible wall-clock TPS. */
+  agentTps?: number | null
 }
 
 function truncate(s: string, max = 36): string {
@@ -596,6 +600,12 @@ const ContextUsageButton: Component<{ percent: number }> = (props) => {
     </button>
   )
 }
+
+const TpsBadge: Component<{ tps: number }> = (props) => (
+  <span class="composer-tps-badge" title={`Last run TPS: ${props.tps.toFixed(1)} tokens/second`}>
+    TPS {props.tps.toFixed(1)}
+  </span>
+)
 
 // ─── Main Composer ───────────────────────────────────────────────────────────
 
@@ -1099,7 +1109,10 @@ export const Composer: Component<ComposerProps> = (props) => {
         <GoalBanner
           text={props.activeGoalText}
           step={props.activeGoalStep}
+          elapsed={props.activeGoalElapsed}
+          progress={props.activeGoalProgress}
           onDismiss={() => props.onSetActiveGoal(null)}
+          onAbort={props.onAbort}
         />
 
         {/* ── Composer box ─────────────────────────────────────────────── */}
@@ -1557,6 +1570,12 @@ export const Composer: Component<ComposerProps> = (props) => {
               <Show when={props.contextPercent !== null && props.contextPercent !== undefined}>
                 <span class="composer-toolbar-divider" aria-hidden />
                 <ContextUsageButton percent={props.contextPercent as number} />
+              </Show>
+
+              <Show
+                when={props.agentTps !== null && props.agentTps !== undefined && props.agentTps > 0}
+              >
+                <TpsBadge tps={props.agentTps as number} />
               </Show>
             </div>
 

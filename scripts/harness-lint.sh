@@ -41,7 +41,6 @@ heading "Harness docs"
 
 REQUIRED_DOCS=(
   "docs/HARNESS.md"
-  "docs/FEATURE_INTAKE.md"
   "docs/TEST_MATRIX.md"
 )
 
@@ -61,10 +60,8 @@ $ALL_REQUIRED_EXIST && pass "All required harness docs present"
 heading "Optional harness directories"
 
 OPTIONAL_DIRS=(
-  "docs/product"
   "docs/stories"
   "docs/decisions"
-  "docs/templates"
 )
 
 for dir in "${OPTIONAL_DIRS[@]}"; do
@@ -81,7 +78,7 @@ heading "Test matrix"
 
 if [ -f "docs/TEST_MATRIX.md" ]; then
   WEAK_ROWS=$(grep -cE '^\|[[:space:]]*\w+[[:space:]]*\|[[:space:]]*\w+.*\|[[:space:]]*(planned|in_progress|changed)[[:space:]]*\|' docs/TEST_MATRIX.md 2>/dev/null || true)
-  EMPTY_EVIDENCE=$(grep -cE '^\|[[:space:]]*\w+.*\|[[:space:]]*$' docs/TEST_MATRIX.md 2>/dev/null || true)
+  EMPTY_EVIDENCE=$(awk -F'|' 'NF>=5 && length($4)==0' docs/TEST_MATRIX.md 2>/dev/null | wc -l | tr -d ' ' || true)
   TOTAL_BEHAVIORS=$(grep -c '|.*|.*|.*|.*|' docs/TEST_MATRIX.md || true)
 
   info "$TOTAL_BEHAVIORS behaviors tracked"

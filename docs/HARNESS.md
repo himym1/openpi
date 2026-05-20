@@ -1,33 +1,65 @@
-# OpenPi Harness
+# OpenPi Goal System
 
-Goal/harness loop: **human intent → intake → story packet → agent loop → product delta → validation proof → harness delta → next intent**
+Session-level objective + plan management for the Pi coding agent.
 
-OpenPi is a desktop workbench for the Pi coding agent (`@earendil-works/pi-coding-agent`). This harness documents how we build it.
+## Architecture
 
-## Operating Rules
+The goal system runs as a Pi extension (`.pi/extensions/harness/index.ts`) and integrates with OpenPi's Electron main process via a shared JSON file.
 
-- **Repo-local docs are durable product truth.** Conversations, specs, and tickets are ephemeral inputs; `docs/` is canonical.
-- **Legacy `.pi/specs` entries are compatibility execution state only** — they exist for old waterfall flows, not as a planning source.
-- **Every meaningful change produces a harness delta:** identify affected product docs, create/update a story packet, record decisions, and update the test matrix.
-- **Prefer one safe action at a time:** inspect → classify → act → verify → report next `/goal`.
-- **The `/goal` command is the public controller surface.** It routes to `harness_status`, `harness_intake`, `harness_init`, `harness_lint`, `story_create`, `decision_record`, and `test_matrix_update`.
+### Extension Layer (Pi SDK)
 
-## Tool Taxonomy
+- **5 LLM tools**: `get_goal`, `create_goal`, `update_goal`, `clear_goal`, `update_plan`
+- **Context injection**: `<goal_context>`, `<budget_limit>`, `<objective_updated>` fragments
+- **Ephemeral plan state**: `update_plan` tracks the current short-lived execution plan only
+- **Plan approval**: `<proposed_plan>` streaming detection + overlay
+- **`/goal` slash command**: set, edit, pause, resume, clear, budget
 
-| Layer | Tools | Owner |
-|---|---|---|
-| Inspection | `harness_status`, `harness_lint` | Pi extension |
-| Classification | `harness_intake` | Pi extension |
-| Scaffolding | `harness_init` | Pi extension |
-| Artifact creation | `story_create`, `decision_record`, `test_matrix_update` | Pi extension |
-| Legacy compatibility | `spec_create`, `spec_next_phase`, `spec_run_task`, `spec_run_all`, `spec_status`, `spec_analyze`, `spec_sync_tasks` | Pi extension (adapter) |
-| Controller | `/goal` command | Pi extension + sidecar |
+### Electron Main Layer
 
-## Process Model
+- **Goal file watcher**: polls `.openpi-goal.json`, forwards to renderer via IPC
+- **GoalStatusIndicator**: compact footer badge in BottomBar
 
-1. User has an intent (feature, bugfix, question, etc.).
-2. Run `/goal <intent>` — sidecar expands into the goal-harness controller prompt.
-3. Agent inspects with `harness_status`, classifies with `harness_intake`.
-4. Agent chooses one safe action: scaffold docs with `harness_init`, create a story with `story_create`, record a decision with `decision_record`, update the test matrix, write product docs, or execute legacy compatibility via `spec_run_task`.
-5. After execution, agent verifies with `harness_lint` or `harness_status`.
-6. Agent reports concise status + next suggested `/goal` intent.
+## User Commands
+
+| Command | Action |
+|---|---|
+| `/goal <objective>` | Set a new active goal |
+| `/goal` | Show current goal summary |
+| `/goal edit` | Edit goal objective inline |
+| `/goal pause` | Pause active goal |
+| `/goal resume` | Resume paused goal |
+| `/goal clear` | Clear the goal and ephemeral plan |
+| `/goal budget N` | Set token budget |
+
+## Agent Tools
+
+| Tool | Description |
+|---|---|
+| `get_goal` | Read current goal status + remaining budget |
+| `create_goal` | Create new goal (fails if one exists) |
+| `update_goal` | Mark goal complete |
+| `clear_goal` | Clear current goal and ephemeral plan |
+| `update_plan` | Track the current ephemeral execution plan with steps |
+
+## Plan vs Tasks
+
+`update_plan` is intentionally **not** a task manager. It is the current agent execution plan: short-lived, overwritten freely, no IDs, no dependencies, no ownership, no subagent execution.
+
+Durable work belongs to `@tintinweb/pi-tasks`: use `TaskCreate`, `TaskUpdate`, and `TaskExecute` for tracked tasks, dependency graphs, ownership, and subagent-backed execution.
+
+## Goal Lifecycle
+
+```
+No Goal ── /goal "do X" ──→ Active ── /goal pause ──→ Paused
+                               │                          │
+                               │                     /goal resume
+                               │                          │
+                          budget exceeded            Active
+                               │
+                               ▼
+                        BudgetLimited ── /goal clear ──→ Complete
+```
+
+## Session Persistence
+
+Goal state is persisted to the session JSONL via `pi.appendEntry("goal_set", ...)`. On resume or fork, the extension restores the goal from session entries.

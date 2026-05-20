@@ -730,6 +730,50 @@ input::placeholder {
   color: var(--accent);
 }
 
+/* ── Goal status indicator ────────────────────────────────────────────── */
+.bottom-bar-goal {
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  color: var(--accent);
+}
+.bottom-bar-goal.status-paused {
+  color: var(--graphite);
+}
+.bottom-bar-goal.status-budget_limited {
+  color: var(--warning);
+}
+.bottom-bar-goal.status-complete {
+  color: var(--success, #22c55e);
+}
+
+.goal-indicator-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.goal-indicator-dot.active {
+  background: var(--accent);
+}
+.goal-indicator-dot.paused {
+  background: var(--graphite);
+}
+.goal-indicator-dot.budget_limited {
+  background: var(--warning);
+}
+.goal-indicator-dot.complete {
+  background: var(--success, #22c55e);
+}
+
 /* ── Git panel border direction ────────────────────────────────────────── */
 /* Right of main (default): border-left separates from center-col. */
 /* Left of main: border-right separates from center-col; left is free. */
@@ -3738,6 +3782,91 @@ body.panel-dragging {
   max-width: 260px;
 }
 
+/* ─── Plan tool row ─────────────────────────────────────────────────── */
+
+.plan-tool-header {
+  cursor: default;
+}
+
+.plan-tool-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--graphite-muted);
+  font-size: 12px;
+}
+
+.plan-tool-explanation {
+  margin: 4px 0 0 28px;
+  color: var(--graphite-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.plan-tool-list {
+  margin: 6px 0 0 28px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  list-style: none;
+}
+
+.plan-tool-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 2px 8px 2px 0;
+  color: var(--graphite);
+  font-size: 12px;
+}
+
+.plan-tool-marker {
+  width: 16px;
+  text-align: center;
+  color: var(--graphite-muted);
+  font-size: 11px;
+}
+
+.plan-tool-step {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-tool-status {
+  color: var(--graphite-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.plan-tool-item--completed {
+  color: var(--graphite-muted);
+}
+
+.plan-tool-item--completed .plan-tool-marker {
+  color: var(--success, #22c55e);
+}
+
+.plan-tool-item--completed .plan-tool-step {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--graphite-muted) 60%, transparent);
+}
+
+.plan-tool-item--in_progress {
+  color: var(--ink);
+}
+
+.plan-tool-item--in_progress .plan-tool-marker,
+.plan-tool-item--in_progress .plan-tool-status {
+  color: var(--accent);
+}
+
 /* ─── Ask tool row ──────────────────────────────────────────────────── */
 
 .ask-question-badge {
@@ -4202,6 +4331,18 @@ body.panel-dragging {
   background: var(--surface-3);
   color: var(--mute);
 }
+.goal-badge--paused {
+  background: rgba(245, 158, 11, 0.14);
+  color: rgb(245, 158, 11);
+}
+.goal-badge--budget_limited {
+  background: rgba(239, 68, 68, 0.14);
+  color: rgb(239, 68, 68);
+}
+.goal-badge--complete {
+  background: rgba(56, 189, 248, 0.14);
+  color: rgb(56, 189, 248);
+}
 .goal-banner-dismiss {
   flex-shrink: 0;
   display: inline-flex;
@@ -4219,6 +4360,59 @@ body.panel-dragging {
 .goal-banner-dismiss:hover {
   background: var(--surface-3);
   color: var(--fg);
+}
+
+/* ── Goal timer ──────────────────────────────────────────────────────────── */
+.goal-timer {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* ── Goal progress bar ──────────────────────────────────────────────────── */
+.goal-progress-wrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  width: 56px;
+  height: 14px;
+}
+.goal-progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.goal-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+/* ── Goal abort button ──────────────────────────────────────────────────── */
+.goal-banner-abort {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: rgb(239, 68, 68);
+  cursor: pointer;
+}
+.goal-banner-abort:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: rgb(248, 113, 113);
 }
 
 /* ── Composer box delivery-mode border hint ──────────────────────────────── */
@@ -4483,6 +4677,19 @@ body.panel-dragging {
   font-weight: 560;
   letter-spacing: -0.01em;
   color: inherit;
+}
+
+.composer-tps-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  color: var(--mute);
+  font-size: 11px;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
 /* Pulse animation when context is high (≥80%) */
@@ -4984,6 +5191,28 @@ body.panel-dragging {
   font-size: 10px;
   color: var(--ash);
   flex-shrink: 0;
+}
+.remote-session-bar {
+  box-sizing: border-box;
+  width: min(860px, calc(100% - 36px));
+  margin: 0 auto 10px;
+  padding: 8px 13px;
+  border-radius: var(--r-lg);
+  background: var(--info-soft, rgba(59, 130, 246, 0.08));
+  border: 1px solid var(--info-line, rgba(59, 130, 246, 0.2));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--info, #3b82f6);
+  font-size: 13px;
+}
+.remote-session-bar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--info, #3b82f6);
+  flex-shrink: 0;
+  animation: pulse 2s infinite;
 }
 .error-toast {
   margin: 0 18px 10px;
@@ -6836,8 +7065,10 @@ body.panel-dragging {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--hairline-strong);
-  background: var(--canvas);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 38px),
+    #11100f;
   overflow: hidden;
   position: relative;
   user-select: none;
@@ -6860,42 +7091,50 @@ body.panel-dragging {
 /* Tab bar */
 .terminal-tabbar {
   display: flex;
-  align-items: stretch;
-  height: 34px;
+  align-items: center;
+  height: 40px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--hairline);
-  background: var(--surface-soft);
-  padding: 0 4px;
-  gap: 1px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(22, 21, 20, 0.96);
+  padding: 0 8px;
+  gap: 5px;
   user-select: none;
 }
 
 .terminal-tab {
   display: inline-flex;
   align-items: center;
-  padding: 0 14px;
+  min-height: 28px;
+  padding: 0 13px;
   font-size: 12px;
   color: var(--graphite);
   background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.12s;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease,
+    opacity 0.14s ease;
 }
 .terminal-tab:hover {
   color: var(--ink);
+  background: rgba(255, 255, 255, 0.04);
 }
 .terminal-tab.is-active {
   color: var(--ink);
-  border-bottom-color: var(--graphite);
+  background: rgba(255, 255, 255, 0.065);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .terminal-tab-closable {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 6px 0 14px;
+  gap: 6px;
+  padding: 0 7px 0 12px;
 }
 .terminal-tab-label {
   background: transparent;
@@ -6930,12 +7169,13 @@ body.panel-dragging {
   align-items: center;
   justify-content: center;
   width: 28px;
+  height: 28px;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   color: var(--ash);
   font-size: 16px;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: 9px;
 }
 .terminal-tab-add:hover {
   color: var(--ink);
@@ -6948,12 +7188,13 @@ body.panel-dragging {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  margin-right: 6px;
   flex-shrink: 0;
 }
 .terminal-tab-status.is-running {
-  background: #4ade80;
-  box-shadow: 0 0 4px rgba(74, 222, 128, 0.4);
+  background: #52e39a;
+  box-shadow:
+    0 0 0 2px rgba(82, 227, 154, 0.12),
+    0 0 10px rgba(82, 227, 154, 0.36);
 }
 .terminal-tab-status.is-exited {
   background: var(--mute);
@@ -6988,12 +7229,13 @@ body.panel-dragging {
   align-items: center;
   justify-content: center;
   width: 28px;
+  height: 28px;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   color: var(--ash);
   font-size: 16px;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: 9px;
   margin-right: 2px;
 }
 .terminal-panel-close:hover {
@@ -7008,11 +7250,31 @@ body.panel-dragging {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(244, 169, 96, 0.055), transparent 34%),
+    radial-gradient(circle at 85% 0%, rgba(97, 175, 239, 0.045), transparent 30%),
+    #0d0c0b;
 }
 
 /* Override xterm container to fill */
+.terminal-pane-inner {
+  box-sizing: border-box;
+  padding: 14px 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 42%),
+    #070706;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 12px 28px rgba(0, 0, 0, 0.22);
+}
 .terminal-pane-inner .xterm {
   height: 100%;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.terminal-pane-inner .xterm-screen,
+.terminal-pane-inner .xterm-rows {
+  font-variant-ligatures: none;
 }
 .terminal-pane-inner .xterm-viewport {
   overflow-y: hidden;
@@ -7071,12 +7333,16 @@ body.panel-dragging {
 .file-panel {
   min-width: 180px;
   max-width: 400px;
+  min-height: 0;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--hairline);
   background: var(--canvas-warm);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .git-panel-header {
@@ -8912,10 +9178,19 @@ body.panel-dragging {
   text-align: center;
 }
 
+.ftree-item {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+}
+
 .ftree-row {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 1;
+  min-width: 0;
   width: 100%;
   min-height: 22px;
   padding: 1px 8px 1px 10px;
@@ -8928,9 +9203,43 @@ body.panel-dragging {
   white-space: nowrap;
   overflow: hidden;
 }
-.ftree-row:hover {
+.ftree-item:hover,
+.ftree-item:focus-within {
   background: color-mix(in srgb, var(--surface-soft) 78%, transparent);
+}
+
+.ftree-row:hover {
   color: var(--ink);
+}
+
+.ftree-root > .ftree-row:hover {
+  background: color-mix(in srgb, var(--surface-soft) 78%, transparent);
+}
+
+.ftree-delete-btn {
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ash);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ftree-item:hover .ftree-delete-btn,
+.ftree-delete-btn:focus-visible {
+  opacity: 1;
+}
+
+.ftree-delete-btn:hover {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
 }
 
 .ftree-workspace-root {
@@ -9738,6 +10047,39 @@ body.panel-dragging {
   gap: 1px;
   flex-shrink: 0;
 }
+.fv-theme-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  color: var(--ash);
+  font-size: 11px;
+  line-height: 1;
+}
+.fv-theme-select:hover {
+  background: var(--surface-raised);
+  color: var(--ink);
+}
+.fv-theme-select-label {
+  color: inherit;
+  font-weight: 500;
+}
+.fv-theme-select select {
+  max-width: 118px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+  cursor: pointer;
+}
+.fv-theme-select select:focus-visible {
+  outline: 1px solid var(--focus-ring, var(--accent));
+  outline-offset: 2px;
+}
+
 .fv-tb-btn {
   display: inline-flex;
   align-items: center;

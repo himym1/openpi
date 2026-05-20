@@ -29,7 +29,6 @@ import { SubagentWidget } from './components/SubagentWidget'
 import { ArchiveConfirmModal } from './components/sidebar/ArchiveConfirmModal'
 import { SessionSidebar } from './components/sidebar/SessionSidebar'
 import { SessionTreePanel } from './components/sidebar/SessionTreePanel'
-import { StoryBrowser } from './components/sidebar/StoryBrowser'
 import { WorkspacePane } from './components/sidebar/WorkspacePane'
 import { TaskWidget } from './components/TaskWidget'
 import { TopBar } from './components/TopBar'
@@ -116,7 +115,6 @@ export default function App() {
     )
   )
 
-  const onToggleStories = () => toggleLeftDrawerMode('stories')
   const onToggleTree = () => toggleLeftDrawerMode('tree')
 
   // ── Git panel side (left or right of main pane) ───────────────────────────
@@ -208,6 +206,18 @@ export default function App() {
       setActiveFileIdx((prev) => Math.min(prev, newFiles.length - 1))
     }
   }
+
+  const closeDeletedFilePreviews = (relPath: string, isDir: boolean) => {
+    const prefix = `${relPath.replace(/\/+$/, '')}/`
+    const newFiles = openFiles().filter(
+      (file) => file !== relPath && !(isDir && file.startsWith(prefix))
+    )
+    if (newFiles.length === openFiles().length) return
+    setOpenFiles(newFiles)
+    if (newFiles.length > 0) {
+      setActiveFileIdx((prev) => Math.min(prev, newFiles.length - 1))
+    }
+  }
   const [diffFiles, setDiffFiles] = createSignal<GitChangedFile[]>([])
   const [diffIndex, setDiffIndex] = createSignal(0)
   const [commitDiffHash, setCommitDiffHash] = createSignal<string | null>(null)
@@ -244,6 +254,28 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = createSignal(SIDEBAR_DEFAULT)
   const [gitPanelWidth, setGitPanelWidth] = createSignal(GIT_PANEL_DEFAULT)
   const [previewWidth, setPreviewWidth] = createSignal(PREVIEW_DEFAULT)
+
+  // ── Workbench context bridge — report visible file to main ──────────
+  createEffect(() => {
+    const files = openFiles()
+    const idx = activeFileIdx()
+    const relPath = files[idx]
+    const cwd = session.selectedWorkspacePath
+    if (relPath && relPath.length > 0 && cwd) {
+      const absPath = `${cwd}/${relPath}`
+      window.openpi.workbenchContext.update({
+        visibleFile: relPath,
+        visibleFileAbs: absPath,
+        terminalOutput: null,
+      })
+    } else {
+      window.openpi.workbenchContext.update({
+        visibleFile: null,
+        visibleFileAbs: null,
+        terminalOutput: null,
+      })
+    }
+  })
 
   // Load persisted panel widths and git side once
   onMount(() => {
@@ -718,12 +750,38 @@ export default function App() {
             .map((message) => message.text)
             .reverse()
         )
+        const remotePreemptedByLocal = createMemo(
+          () =>
+            session.localActivityAt > 0 && session.remoteSessionUpdatedAt <= session.localActivityAt
+        )
+        const showingRemoteSession = createMemo(() =>
+          Boolean(
+            !session.isStreaming &&
+              !remotePreemptedByLocal() &&
+              session.remoteSessionStatus?.sessionFile &&
+              session.remoteSessionMessages.length > 0
+          )
+        )
+        const conversationMessages = createMemo(() =>
+          showingRemoteSession() ? session.remoteSessionMessages : session.messages
+        )
+        const conversationStreaming = createMemo(
+          () =>
+            session.isStreaming ||
+            (!remotePreemptedByLocal() && session.remoteSessionStatus?.status === 'running')
+        )
+        const showRemoteSessionBar = createMemo(() =>
+          Boolean(
+            !remotePreemptedByLocal() &&
+              (session.remoteSessionStatus?.status === 'running' || showingRemoteSession())
+          )
+        )
 
         const visibleModels = () =>
           session.models.filter((m) => !hiddenModels().has(`${m.provider}/${m.id}`))
 
         return (
-          <div class={`app-shell${session.isStreaming ? ' agent-streaming' : ''}`}>
+          <div class={`app-shell${conversationStreaming() ? ' agent-streaming' : ''}`}>
             {/* RefsPickerPanel: always mounted so TopBar branch click works
                 even when the git panel is closed */}
             <RefsPickerPanel
@@ -776,7 +834,7 @@ export default function App() {
                 </div>
               </Show>
 
-              {/* Left drawer — fixed left, switches between Threads, Workspace, and Stories */}
+              {/* Left drawer — fixed left, switches between Threads, Workspace, and Session Map */}
               <Show when={sidebarOpen()}>
                 <Show when={leftDrawerMode() === 'workspace'}>
                   <WorkspacePane
@@ -791,9 +849,6 @@ export default function App() {
                     onOpenWorkspace={session.openWorkspace}
                     onNewSessionIn={handleNewSessionIn}
                   />
-                </Show>
-                <Show when={leftDrawerMode() === 'stories'}>
-                  <StoryBrowser cwd={cwd()} onOpenFile={(relPath) => openFile(relPath)} />
                 </Show>
                 <Show when={leftDrawerMode() === 'tree'}>
                   <SessionTreePanel
@@ -921,7 +976,7 @@ export default function App() {
                   {/* Conversation side — always mounted */}
                   <div class="main-panel-conversation">
                     <ConversationPane
-                      messages={session.messages}
+                      messages={conversationMessages()}
                       workspaceName={workspaceName()}
                       workspaceSummary={session.workspaceSummary}
                       activeSessionPath={activeSessionPath()}
@@ -930,7 +985,7 @@ export default function App() {
                       onFileClick={(path) => openFile(path)}
                       onOpenWorkspace={session.openWorkspace}
                       displayPreferences={displayPreferences()}
-                      isStreaming={session.isStreaming}
+                      isStreaming={conversationStreaming()}
                       hasMoreHistoryBefore={session.hasMoreHistoryBefore}
                       isLoadingOlderHistory={session.isLoadingOlderHistory}
                       onLoadOlderHistory={session.loadOlderSessionMessages}
@@ -951,6 +1006,23 @@ export default function App() {
                         )}
                       </Show>
                     </div>
+
+                    <Show when={showRemoteSessionBar()}>
+                      <div class="remote-session-bar">
+                        <span class="remote-session-bar-dot" />
+                        {session.remoteSessionStatus?.status === 'running'
+                          ? 'Agent running in '
+                          : 'Mirroring session from '}
+                        <strong>
+                          {session.remoteSessionStatus?.app === 'pi-tui'
+                            ? 'Pi TUI'
+                            : (session.remoteSessionStatus?.app ?? 'another instance')}
+                        </strong>
+                        <Show when={Boolean(session.remoteSessionStatus?.workspace)}>
+                          <span> — {session.remoteSessionStatus!.workspace!}</span>
+                        </Show>
+                      </div>
+                    </Show>
 
                     <Show when={session.error}>
                       {(getErr) => (
@@ -1002,8 +1074,11 @@ export default function App() {
                       }}
                       activeGoalText={session.activeGoalText}
                       activeGoalStep={session.activeGoalStep}
+                      activeGoalElapsed={session.activeGoalElapsed}
+                      activeGoalProgress={session.activeGoalProgress}
                       onSetActiveGoal={session.setActiveGoal}
                       contextPercent={session.contextPercent}
+                      agentTps={session.agentRunMetrics?.tps ?? null}
                     />
                   </div>
 
@@ -1115,6 +1190,7 @@ export default function App() {
                     cwd={cwd()}
                     changedPaths={new Set()}
                     onFileClick={(relPath) => openFile(relPath)}
+                    onFileDeleted={closeDeletedFilePreviews}
                   />
                 </div>
               </Show>
@@ -1125,7 +1201,6 @@ export default function App() {
               leftDrawerMode={leftDrawerMode()}
               onToggleThreads={() => toggleLeftDrawerMode('threads')}
               onToggleWorkspace={() => toggleLeftDrawerMode('workspace')}
-              onToggleStories={onToggleStories}
               onToggleTree={onToggleTree}
               gitPanelOpen={gitPanelOpen()}
               onToggleGitPanel={() => setGitPanelOpen((prev) => !prev)}
@@ -1137,6 +1212,7 @@ export default function App() {
               isStreaming={session.isStreaming}
               gitSyncAction={gitSyncAction()}
               gitSyncMessage={gitSyncMessage()}
+              goalUpdate={session.goalUpdate}
             />
 
             <Show when={fileSearchOpen()}>

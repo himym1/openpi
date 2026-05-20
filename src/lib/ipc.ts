@@ -28,6 +28,8 @@ export const IPC = {
   GET_GIT_BRANCH: 'openpi:get-git-branch',
   GET_WORKSPACE_SUMMARY: 'openpi:get-workspace-summary',
   SET_WORKSPACE_TRUST: 'openpi:set-workspace-trust',
+  WORKBENCH_CONTEXT_UPDATE: 'openpi:workbench-context-update',
+  WORKBENCH_CONTEXT_GET: 'openpi:workbench-context-get',
   CHECK_PATH_PROTECTION: 'openpi:check-path-protection',
   GET_DIAGNOSTICS_BUNDLE: 'openpi:get-diagnostics-bundle',
   GET_CUSTOMIZATIONS: 'openpi:get-customizations',
@@ -53,6 +55,7 @@ export const IPC = {
   // App self-update (renderer → main / main → renderer)
   APP_UPDATE_CHECK: 'openpi:app-update-check',
   APP_UPDATE_OPEN_RELEASE: 'openpi:app-update-open-release',
+  APP_UPDATE_INSTALL: 'openpi:app-update-install',
   APP_UPDATE_STATUS: 'openpi:app-update-status',
   GET_CHANGELOG: 'openpi:get-changelog',
 
@@ -80,6 +83,7 @@ export const IPC = {
   AGENT_CHANGED_FILES: 'openpi:agent-changed-files',
   READ_FILE: 'openpi:read-file',
   WRITE_FILE: 'openpi:write-file',
+  DELETE_FILE: 'openpi:delete-file',
   FORMAT_FILE: 'openpi:format-file',
   SET_EXTENSION_ENABLED: 'openpi:set-extension-enabled',
   GET_FIRST_RUN: 'openpi:get-first-run',
@@ -124,6 +128,10 @@ export const IPC = {
   GET_OUTPUT_BUFFER: 'openpi:get-output-buffer',
   GIT_STATUS_CHANGED: 'openpi:git-status-changed',
   FILE_TREE_CHANGED: 'openpi:file-tree-changed',
+  REMOTE_SESSION_STATUS: 'openpi:remote-session-status',
+  REMOTE_SESSION_UPDATE: 'openpi:remote-session-update',
+  GOAL_UPDATE: 'openpi:goal-update',
+  PLAN_UPDATE: 'openpi:plan-update',
 } as const
 
 // ─── Invoke payloads ────────────────────────────────────────────────────────
@@ -368,6 +376,13 @@ export const customizationDiagnosticSchema = z.object({
 })
 export type CustomizationDiagnostic = z.infer<typeof customizationDiagnosticSchema>
 
+export const workbenchContextSchema = z.object({
+  visibleFile: z.string().nullable(),
+  visibleFileAbs: z.string().nullable(),
+  terminalOutput: z.string().nullable(),
+})
+export type WorkbenchContextPayload = z.infer<typeof workbenchContextSchema>
+
 export const setExtensionEnabledRequestSchema = z.object({
   /** Unique extension ID (matching CustomizationItem.id) */
   id: z.string().min(1),
@@ -432,6 +447,33 @@ export const sessionHistoryPageSchema = z.object({
   limit: z.number(),
 })
 export type SessionHistoryPage = z.infer<typeof sessionHistoryPageSchema>
+
+export const remoteSessionUpdateSchema = sessionHistoryPageSchema.extend({
+  sessionFile: z.string(),
+  updatedAt: z.number(),
+})
+export type RemoteSessionUpdate = z.infer<typeof remoteSessionUpdateSchema>
+
+export const goalUpdateSchema = z.object({
+  objective: z.string().nullable(),
+  status: z.string().nullable(),
+  tokensUsed: z.number(),
+  tokenBudget: z.number().nullable(),
+  timeUsedSeconds: z.number(),
+  timestamp: z.number(),
+})
+export type GoalUpdate = z.infer<typeof goalUpdateSchema>
+
+export const planItemStatusSchema = z.enum(['pending', 'in_progress', 'completed'])
+export const planItemSchema = z.object({
+  step: z.string().min(1),
+  status: planItemStatusSchema,
+})
+export const planUpdateSchema = z.object({
+  plan: z.array(planItemSchema),
+  timestamp: z.number(),
+})
+export type PlanUpdate = z.infer<typeof planUpdateSchema>
 
 // ─── Provider info ───────────────────────────────────────────────────────────
 
@@ -981,6 +1023,17 @@ export const writeFileRequestSchema = z.object({
   content: z.string(),
 })
 export type WriteFileRequest = z.infer<typeof writeFileRequestSchema>
+
+export const deleteFileRequestSchema = z.object({
+  /** Path relative to workspace cwd — validated against cwd in Electron main */
+  path: z.string().min(1),
+})
+export type DeleteFileRequest = z.infer<typeof deleteFileRequestSchema>
+
+export const deleteFileResultSchema = z.object({
+  trashed: z.boolean(),
+})
+export type DeleteFileResult = z.infer<typeof deleteFileResultSchema>
 
 export const fileContentSchema = z.object({
   content: z.string(),

@@ -24,7 +24,10 @@ import {
 } from '../lib/extensionTrackers'
 import type {
   BashExecutionResult,
+  GoalUpdate,
   ModelInfo,
+  PlanUpdate,
+  RemoteSessionUpdate,
   SessionEvent,
   SessionListItem,
   SessionListOptions,
@@ -94,6 +97,45 @@ export function useOpenPiSession() {
   const [tasks, setTasks] = createSignal<TrackedTask[]>([])
   const [askState, setAskState] = createSignal<AskState | null>(null)
   const [agents, setAgents] = createSignal<TrackedAgent[]>([])
+  const [agentRunMetrics, setAgentRunMetrics] = createSignal<{
+    elapsedMs: number
+    output: number
+    tps: number
+  } | null>(null)
+
+  // ── Remote agent status (Pi TUI sync bridge) ─────────────────────────────
+  const [remoteSessionStatus, setRemoteSessionStatus] = createSignal<{
+    app: string
+    status: string
+    pid: number
+    workspace?: string
+    sessionFile?: string | null
+  } | null>(null)
+  const [remoteSessionUpdate, setRemoteSessionUpdate] = createSignal<RemoteSessionUpdate | null>(
+    null
+  )
+  const [goalUpdate, setGoalUpdate] = createSignal<GoalUpdate | null>(null)
+  const [planUpdate, setPlanUpdate] = createSignal<PlanUpdate | null>(null)
+
+  // Live elapsed offset: ticks up every second while the agent is streaming
+  const [goalElapsedOffset, setGoalElapsedOffset] = createSignal(0)
+  createEffect(() => {
+    if (isStreaming() && activeGoalText()) {
+      const id = setInterval(() => {
+        setGoalElapsedOffset((o) => o + 1)
+      }, 1000)
+      onCleanup(() => clearInterval(id))
+    } else {
+      setGoalElapsedOffset(0)
+    }
+  })
+  const [localActivityAt, setLocalActivityAt] = createSignal(0)
+
+  const markLocalActivity = () => {
+    setLocalActivityAt(Date.now())
+    setRemoteSessionStatus(null)
+    setRemoteSessionUpdate(null)
+  }
 
   // ── Refs — plain variables assigned via SolidJS ref= callback ────────────
   let _bottomEl: HTMLDivElement | undefined
@@ -101,6 +143,8 @@ export function useOpenPiSession() {
   let latestSessionFile: string | null = null
   let currentModelName: string | null = null
   let currentTurnStartMs: number | null = null
+  // ── Agent-run wall-clock tracking (for accurate TPS) ─────────────────
+  let _agentStartWallMs: number | null = null
 
   // ── Derived ───────────────────────────────────────────────────────────────
   // (contextPercent is already a signal — no memo wrapper needed)
@@ -144,6 +188,10 @@ export function useOpenPiSession() {
   const handleEvent = (event: SessionEvent) => {
     if (event.type === 'agent_start') {
       setIsStreaming(true)
+      markLocalActivity()
+      // Reset wall-clock TPS tracking
+      _agentStartWallMs = Date.now()
+      setAgentRunMetrics(null)
       // Auto-activate steer mode ONLY when the user explicitly sent a fresh
       // prompt — not on every agent_start (e.g. intermediate restarts after
       // a steer delivery). This prevents overriding a mode the user set
@@ -165,6 +213,33 @@ export function useOpenPiSession() {
       // Clear finished subagents on session end; keep tasks/ask across agent turns
       _subagentTracker.clearFinished()
       setAgents(_subagentTracker.snapshot())
+
+      // Compute wall-clock TPS using agent_end event.messages (same approach as Pi's tps.ts)
+      if (_agentStartWallMs !== null) {
+        const elapsedMs = Date.now() - _agentStartWallMs
+        const msgs = (event as Record<string, unknown>).messages
+        if (elapsedMs > 0 && Array.isArray(msgs)) {
+          let output = 0
+          for (const m of msgs) {
+            if ((m as Record<string, unknown>).role === 'assistant') {
+              const usage = (m as Record<string, unknown>).usage as
+                | Record<string, unknown>
+                | undefined
+              if (usage && typeof usage.output === 'number') {
+                output += usage.output
+              }
+            }
+          }
+          if (output > 0) {
+            setAgentRunMetrics({
+              elapsedMs,
+              output,
+              tps: output / (elapsedMs / 1000),
+            })
+          }
+        }
+        _agentStartWallMs = null
+      }
     }
 
     // ── Extension tracker dispatch ───────────────────────────────────────────
@@ -329,6 +404,39 @@ export function useOpenPiSession() {
     const unsubs: Array<() => void> = []
 
     unsubs.push(window.openpi.onSessionEvent(handleEvent))
+    unsubs.push(
+      window.openpi.onRemoteSessionStatus((payload) => {
+        setRemoteSessionStatus({
+          app: payload.app,
+          status: payload.status,
+          pid: payload.pid,
+          workspace: payload.workspace,
+          sessionFile: payload.sessionFile,
+        })
+        if (payload.status !== 'running' && !payload.sessionFile) setRemoteSessionUpdate(null)
+      })
+    )
+
+    unsubs.push(
+      window.openpi.onRemoteSessionUpdate((payload) => {
+        setRemoteSessionUpdate(payload)
+      })
+    )
+
+    unsubs.push(
+      window.openpi.onGoalUpdate((payload) => {
+        setGoalUpdate(payload)
+        // Treat the harness file as authoritative: create/edit replaces the text;
+        // clear writes objective:null and must clear the banner.
+        setActiveGoalText(payload.objective)
+      })
+    )
+
+    unsubs.push(
+      window.openpi.onPlanUpdate((payload) => {
+        setPlanUpdate(payload)
+      })
+    )
 
     unsubs.push(window.openpi.onSessionReady(applySessionReady))
 
@@ -454,6 +562,7 @@ export function useOpenPiSession() {
 
     setInput('')
     if (textareaEl) textareaEl.style.height = 'auto'
+    markLocalActivity()
     try {
       if (queueMode() === 'steer')
         await window.openpi.steer(promptPayload.text, promptPayload.contextPrefix)
@@ -584,6 +693,7 @@ export function useOpenPiSession() {
   const submitAsk = async (formatted: string) => {
     _askTracker.clear()
     setAskState(null)
+    markLocalActivity()
     try {
       if (isStreaming()) {
         await window.openpi.steer(formatted)
@@ -604,6 +714,11 @@ export function useOpenPiSession() {
   // ── Goal actions ──────────────────────────────────────────────────────────
   const setActiveGoal = (text: string | null) => {
     setActiveGoalText(text)
+    if (text === null && ready()) {
+      void window.openpi.prompt('/goal clear').catch((err) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+    }
   }
   const clearActiveGoal = () => {
     setActiveGoalText(null)
@@ -620,6 +735,9 @@ export function useOpenPiSession() {
     },
     get isStreaming() {
       return isStreaming()
+    },
+    get agentRunMetrics() {
+      return agentRunMetrics()
     },
     get isShellRunning() {
       return isShellRunning()
@@ -678,13 +796,47 @@ export function useOpenPiSession() {
     get activeGoalStep() {
       const goal = activeGoalText()
       if (!goal) return null
+      const status = goalUpdate()?.status
+      if (status === 'complete' || status === 'paused' || status === 'budget_limited') return status
       return isStreaming() ? 'running' : 'idle'
+    },
+    get activeGoalElapsed() {
+      const base = goalUpdate()?.timeUsedSeconds ?? 0
+      return base + goalElapsedOffset()
+    },
+    get activeGoalProgress() {
+      const gu = goalUpdate()
+      if (!gu || gu.tokensUsed === undefined) return null
+      return {
+        tokensUsed: gu.tokensUsed,
+        tokenBudget: gu.tokenBudget,
+        percent: gu.tokenBudget ? Math.min(gu.tokensUsed / gu.tokenBudget, 1) : null,
+      }
     },
     get steeringQueue() {
       return steeringQueue()
     },
     get followUpQueue() {
       return followUpQueue()
+    },
+    get remoteSessionStatus() {
+      return remoteSessionStatus()
+    },
+    get remoteSessionMessages() {
+      return remoteSessionUpdate()?.messages ?? []
+    },
+    get remoteSessionUpdatedAt() {
+      return remoteSessionUpdate()?.updatedAt ?? 0
+    },
+    get goalUpdate() {
+      return goalUpdate()
+    },
+    get planUpdate() {
+      return planUpdate()
+    },
+
+    get localActivityAt() {
+      return localActivityAt()
     },
     get sessionName() {
       return sessionName()
@@ -750,6 +902,7 @@ export function useOpenPiSession() {
     dismissAsk,
     setActiveGoal,
     clearActiveGoal,
+
     clearTasks: () => {
       _taskTracker.clear()
       setTasks([])

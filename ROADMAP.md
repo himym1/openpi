@@ -6,7 +6,7 @@ OpenPi is a native desktop workbench for the Pi coding agent. The goal: make Pi 
 
 ---
 
-## Current Status (May 2026 beta) — v0.1.15
+## Current Status (May 2026 beta) — v0.1.16
 
 Done so far:
 - Electron shell with secure preload bridge, Zod-backed IPC contracts, sandboxed renderer, and main-owned authority for filesystem, PTY, Git, and app metadata.
@@ -15,7 +15,7 @@ Done so far:
 - Customizations inventory for Extensions, Skills, Prompts, Themes, Packages, Settings, General preferences, and Keybindings; command palette (`⇧⌘P`).
 - **Goal/harness v2 loop**: `/goal` controller with 7 harness tools, product docs, story browser, decision records, test matrix.
 - **Conversation polish**: live token counter, code line numbers, streaming cursor fix, entry animation, responsive images.
-- **File editor improvements**: format-on-save (Biome), word wrap toggle, FORMAT_FILE IPC, find-with-replace.
+- **File editor improvements**: CodeMirror 6 editor, format-on-save (Biome), word wrap toggle, FORMAT_FILE IPC, find-with-replace.
 - **Extensions UI**: enable/disable toggle per extension, preference persistence, reload button.
 - **Terminal tabs**: renameable tabs, add/close/switch, process exit indicators.
 - **Onboarding flow**: first-run detection, enhanced welcome screen with setup guide.
@@ -75,10 +75,32 @@ Still beta-blocking:
 | State | Solid signals/memos plus Electron-main read models |
 | Validation | Zod at every IPC/JSON boundary |
 | Terminal | xterm.js + node-pty in main |
+| Editor | CodeMirror 6 |
 | Diff | @pierre/diffs (replaceable renderer only) |
 | Pi integration | @earendil-works/pi-coding-agent SDK (direct import in main) |
 | Persistence | SQLite via better-sqlite3 in main process |
 | Secrets | OS keychain via Electron safeStorage |
+
+---
+
+## Reference Study — Terax AI
+
+Source: [`crynta/terax-ai`](https://github.com/crynta/terax-ai), reviewed at commit `4f5dbe452ae193f0aa152f421b8dccd2a322f11a`.
+
+What is worth learning:
+- **Feature-module architecture:** Terax groups major workbench surfaces under `src/modules/` (`ai`, `editor`, `explorer`, `terminal`, `preview`, `source-control`, `git-history`, `tabs`, `settings`). OpenPi should keep using feature slices for large surfaces instead of growing a monolithic app component.
+- **Native authority boundary:** Terax registers PTY, filesystem, search, Git, shell, secrets, networking, and workspace authorization as native commands in `src-tauri/src/lib.rs`. OpenPi's equivalent remains Electron main + typed preload IPC; renderer stays intent-only.
+- **Workbench surfaces stay alive:** Terax keeps terminals/editors/previews/diffs mounted and hides inactive panes so long-running state keeps streaming. OpenPi should apply the same rule to terminal tabs, diff/file preview surfaces, and agent conversation state.
+- **Capability-tiered agent approvals:** Terax auto-runs read-only tools behind secret-path guards, while mutating tools require explicit approval and edits require prior `read_file`. OpenPi should express this at the Electron-main permission gate, not inside the renderer.
+- **Scoped read-only subagents:** Terax's subagents are role-based and tool-whitelisted. OpenPi should treat Pi subagents/task widgets as first-class UI, with read-only defaults and explicit escalation for mutation-capable work.
+- **Pragmatic package ideas:** Terax validates CodeMirror 6 as the editor base and uses optional editor add-ons (`@codemirror/merge`, `@codemirror/lint`, `@replit/codemirror-vim`, multiple `@uiw` themes), xterm.js add-ons, OS keychain storage, and explicit workspace authorization. Adopt only where they support OpenPi's Pi-first product boundary.
+
+Roadmap implications:
+- Add a documented privileged-command registry for Electron main/preload IPC, with each command classified as read, write, shell, Git, secret, or extension/package mutation.
+- Keep long-lived workbench surfaces mounted when switching center surfaces or tabs; hide instead of remounting when preserving streaming/process state matters.
+- Add read-before-edit and protected-path enforcement to any OpenPi-owned mutation flow, including Git hunk application, file saves, terminal shell actions, and future Pi resource generators.
+- Represent agent-proposed edits as reviewable diff cards/tabs before apply, rather than burying patch intent inside generic tool output.
+- Consider a later editor-enhancement slice for CM6 merge/lint/Vim/theme-pack support; do not let this turn OpenPi into a full IDE.
 
 ---
 
@@ -399,42 +421,35 @@ Acceptance criteria:
 
 ## Phase 6 — Trust, Policy, and Release Hardening
 
-**Goal:** make OpenPi safe enough for broader beta distribution by putting explicit trust boundaries around Pi resources, workspace-local code, file mutations, secrets, and packaged releases — while preserving Pi's model as a minimal, customizable coding harness.
+**Status:** ✅ Implemented (9/10 — see blocker below). Build slices 1–9 are done: workspace trust model, resource provenance inventory, extension/package enablement gates, protected path policy, high-risk mutation confirmation, secret storage and redaction, settings/capability surface, diagnostics/export bundle, and SQLite durability/startup safety. All live in `electron/protectedPaths.ts`, `electron/secretRedact.ts`, `electron/customizations.ts`, `electron/sessionIndex.ts`, and their IPC handlers in `electron/main.ts`.
 
-Pi's public positioning is the constraint: Pi is intentionally primitive-first. Extensions, skills, prompt templates, themes, and packages are the customization layer. Features such as permission gates, plan mode, MCP, sub-agents, path protection, sandboxing, and background execution are not assumed Pi core features; they are built by extensions/packages or by the embedding app. OpenPi must therefore provide desktop-level trust, provenance, policy, and release safety around Pi's extensibility model instead of pretending Pi ships those controls natively.
+**Remaining blocker:** slice 10 (release signing/notarization) requires Apple Developer secrets and a Windows signing plan — secrets that OpenPi cannot provision in code. CI infra is ready (`.github/workflows/release.yml:76-80`); the org needs to supply APPLE_ID, CSC_LINK, etc. The roadmap will be updated when signing is live.
 
-### Phase 6 principles
+---
 
-1. **Pi stays Pi.** OpenPi does not reimplement Pi's agent runtime or mislabel extension/package features as core Pi features.
-2. **Renderer remains intent-only.** Electron main owns trust decisions, filesystem writes, Git mutations, shell/PTY authority, resource reloads, secrets, and release diagnostics.
-3. **Extensions are executable code.** Project-local extensions and installed packages require visible provenance and explicit trust before enablement.
-4. **Permission gates are OpenPi policy.** High-risk confirmations live at the Electron-main boundary and/or in an OpenPi-owned Pi extension package, and the UI labels them honestly as OpenPi policy.
-5. **Release trust is product trust.** Signed/notarized builds, reproducible CI, packaged-app smoke tests, Homebrew update correctness, and clear release notes are security work.
+## Phase 7 — Agent Workbench Quality
+
+**Goal:** make OpenPi feel like a polished workbench, not a Pi SDK shell. The trust layer is solid (Phase 6); now invest in the surfaces the user touches every session.
 
 Build in thin slices:
 
-1. **Workspace trust model:** new-workspace trust prompt; trusted/untrusted state persisted in main-owned storage; project-local extensions/packages disabled until trust is granted; UI explains that project resources can execute code through Pi.
-2. **Resource provenance inventory:** Extensions, Skills, Prompts, Themes, and Packages show path, scope (global/project/package), package origin (npm/git/local), enabled state, trust requirement, last modified time, and risk level for executable resources.
-3. **Extension/package enablement gates:** enabling a project-local extension or installing/enabling a Pi package requires explicit confirmation with source path, package identifier, version/ref, install location, and reload behavior. OpenPi never silently installs or enables third-party code.
-4. **Protected path policy:** configurable main-owned protected path list; writes to sensitive locations require confirmation. Initial defaults include `~/.ssh`, `~/.gnupg`, shell profiles, OpenPi settings/secrets, `.git`, and paths outside the trusted workspace.
-5. **High-risk mutation confirmation:** destructive shell commands, file deletion, writes outside the workspace, Git reset/clean/force-push/rebase-abort, package installation, and executable project-resource enablement require explicit user approval. Renderer collects intent only; Electron main decides.
-6. **Secret storage and redaction:** store OpenPi-owned secrets with Electron `safeStorage` or an OS keychain path; do not duplicate Pi `AuthStorage` unless OpenPi owns the secret; redact secrets from logs, diagnostics, output panel entries, and export bundles.
-7. **Settings and capability surface:** settings UI for providers/models, thinking levels, auto-compaction, keybindings, extension/package configuration, and model capabilities from `ModelRegistry`; MCP appears only when supplied by an installed Pi extension/package.
-8. **Diagnostics/export bundle:** collect app logs, IPC errors, Pi sidecar status, resource inventory, Git state, and release/build metadata with path and secret redaction suitable for beta support.
-9. **SQLite durability and startup safety:** WAL mode, foreign keys, schema versioning, migration runner, slow-startup progress events, and crash-safe handling for session/workspace read-model state.
-10. **Release hardening:** macOS signing/notarization, Windows signing plan, packaged-app startup smoke tests, artifact checksum verification, Homebrew tap update verification, and CI coverage that validates packaged output, not only `npm run build`.
+1. **Testing strategy execution** — `docs/TEST_MATRIX.md` has 34 rows missing evidence. Write the missing tests: IPC Zod roundtrips, fake AgentSession fixtures, SQLite session-index upserts, PTY smoke, permission gate tests. Clear the harness lint warning as a gating step.
+2. **Subagent/task card widgets** — Pi SDK emits `Agent`/`TaskCreate`/`TaskExecute` events. Render them as first-class interactive cards: expand/collapse agent output, show task dependencies and status, expose abort/kill/re-execute.
+3. **Diff review cards** — when Pi proposes an edit, show a side-by-side diff card before apply, with accept/reject/hunk-selection controls. Stage reviews in a queue; batch into a commit workflow from the review surface.
+4. **Session map v2** — visualize session tree branches, fork points, compaction summaries, labels. Click-to-navigate, inline fork/create actions from any node.
+5. **Plan overlay polish** — live step tracking with elapsed-time per step, mini progress bar, abort-step button. Persist plan state across session reloads so interrupted plans survive app restart.
+6. **Workbench context bridge** — lazily supply cwd, visible file path, and recent terminal output to the agent's tool context (following Terax's `ToolContext` pattern). Let the agent know what the user is looking at.
+7. **Live token/cost per turn** — surface turn-level token counts and estimated cost in the conversation header during streaming, not only in a post-agent-end summary.
+8. **Electron auto-updater wire-up** — connect `electron-updater` to the release workflow for in-app update notifications with delta/blockmap support.
 
 Acceptance criteria:
-- Untrusted workspaces cannot load or enable project-local executable Pi resources without a visible trust decision.
-- Every discovered Extension, Skill, Prompt, Theme, and Package shows provenance, scope, and trust state.
-- Installing/enabling Pi packages or project-local extensions is never silent and always shows source/origin before execution.
-- High-risk file, shell, Git, and package mutations require Electron-main policy approval; renderer has no authority path around the gate.
-- Protected path checks block or confirm writes to sensitive paths and paths outside the trusted workspace.
-- OpenPi-owned secrets are encrypted at rest and redacted from logs, diagnostics, and exports.
-- Settings expose Pi-native concepts accurately: providers/models, thinking, compaction, keybindings, extensions, packages, skills, prompts, and themes.
-- Diagnostics bundles are useful for beta support without leaking secrets.
-- SQLite read models survive app restart and hard-kill scenarios without corruption.
-- Release artifacts are signed/notarized where applicable, smoke-tested after packaging, checksummed, and reflected correctly in GitHub releases and the Homebrew tap.
+- `npm test` passes and includes tests for IPC, session index, PTY, and permission gates.
+- Harness test-matrix lint reports 0 missing evidence rows.
+- Subagent/task cards render agent output with expand/collapse and abort controls.
+- Agent-proposed edits appear as reviewable diff cards before touching disk.
+- Session tree view shows branching with click-to-navigate and fork actions.
+- Plan overlay shows live step state with elapsed-time per step.
+- Auto-updater notifies on new release and installs without user intervention beyond confirmation.
 
 ---
 
