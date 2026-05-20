@@ -26,6 +26,7 @@ describe('SettingsPane model settings', () => {
     Object.defineProperty(window, 'openpi', {
       configurable: true,
       value: {
+        getModels: vi.fn(() => Promise.resolve(models)),
         getSettings: vi.fn(() =>
           Promise.resolve({
             global: { defaultModel: 'gpt-5.5', defaultThinkingLevel: 'xhigh' },
@@ -42,8 +43,8 @@ describe('SettingsPane model settings', () => {
 
   afterEach(() => cleanup())
 
-  it('shows configured model settings as selectable choices', async () => {
-    render(() => <SettingsPane hasCwd={false} models={models} onError={vi.fn()} />)
+  it('loads configured model choices from the Pi model registry', async () => {
+    render(() => <SettingsPane hasCwd={false} models={[]} onError={vi.fn()} />)
 
     await screen.findByText('GPT 5.5 · topping-codex')
     await waitFor(() => {
@@ -53,7 +54,7 @@ describe('SettingsPane model settings', () => {
   })
 
   it('selecting a default model saves its provider with the model id', async () => {
-    render(() => <SettingsPane hasCwd={false} models={models} onError={vi.fn()} />)
+    render(() => <SettingsPane hasCwd={false} models={[]} onError={vi.fn()} />)
 
     await screen.findByText('GPT 5.5 · topping-codex')
     const selects = screen.getAllByRole('combobox') as HTMLSelectElement[]

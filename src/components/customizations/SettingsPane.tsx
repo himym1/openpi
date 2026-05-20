@@ -401,14 +401,19 @@ export function SettingsPane(props: SettingsPaneProps) {
   const [loading, setLoading] = createSignal(false)
   const [savedKey, setSavedKey] = createSignal<string | null>(null)
   const [local, setLocal] = createSignal<PiSettings>({})
+  const [availableModels, setAvailableModels] = createSignal<ModelInfo[]>(props.models)
   let savedTimer: ReturnType<typeof setTimeout> | null = null
   let saveTimer: ReturnType<typeof setTimeout> | null = null
 
   const load = async () => {
     setLoading(true)
     try {
-      const r = await window.openpi.getSettings()
+      const [r, models] = await Promise.all([
+        window.openpi.getSettings(),
+        window.openpi.getModels(),
+      ])
       setResult(r)
+      setAvailableModels(models.length ? models : props.models)
       setLocal(scope() === 'global' ? { ...r.global } : { ...r.project })
     } catch (err) {
       props.onError(err instanceof Error ? err.message : String(err))
@@ -450,7 +455,7 @@ export function SettingsPane(props: SettingsPaneProps) {
     setLocal((prev) => {
       let next = setNestedValue(prev, key, value)
       if (key === 'defaultModel' && typeof value === 'string') {
-        const selectedModel = props.models.find((model) => model.id === value)
+        const selectedModel = availableModels().find((model) => model.id === value)
         if (selectedModel) next = setNestedValue(next, 'defaultProvider', selectedModel.provider)
       }
       scheduleSave(key, next)
@@ -493,7 +498,11 @@ export function SettingsPane(props: SettingsPaneProps) {
       : (result()?.projectPath ?? '.pi/settings.json')
 
   const providerOptions = () => {
-    const providers = new Set(props.models.map((model) => model.provider).filter(Boolean))
+    const providers = new Set(
+      availableModels()
+        .map((model) => model.provider)
+        .filter(Boolean)
+    )
     const current = getNestedValue(local(), 'defaultProvider')
     if (typeof current === 'string' && current) providers.add(current)
     return [...providers].sort((a, b) => a.localeCompare(b))
@@ -501,7 +510,7 @@ export function SettingsPane(props: SettingsPaneProps) {
 
   const modelOptions = () => {
     const seen = new Set<string>()
-    const models = props.models
+    const models = availableModels()
       .filter((model) => {
         if (seen.has(model.id)) return false
         seen.add(model.id)

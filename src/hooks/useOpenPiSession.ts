@@ -311,15 +311,14 @@ export function useOpenPiSession() {
   createEffect(
     on(ready, (r) => {
       if (!r) return
-      if (r.model) {
-        window.openpi
-          .getModels()
-          .then((availableModels) => {
-            setModels(availableModels)
-            if (!currentModel() && availableModels.length) setCurrentModel(availableModels[0])
-          })
-          .catch(() => {})
-      }
+      window.openpi
+        .getModels()
+        .then((availableModels) => {
+          setModels(availableModels)
+          if (!currentModel() && availableModels.length)
+            setCurrentModel(r.model ?? availableModels[0])
+        })
+        .catch(() => {})
 
       // Focus composer when a session opens
       textareaEl?.focus()

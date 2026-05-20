@@ -18,6 +18,7 @@ function installOpenPiMock() {
       getSessions: vi.fn(() => Promise.resolve([])),
       getSessionStats: vi.fn(() => Promise.resolve({ contextUsagePercent: 0 })),
       getWorkspaceSummary: vi.fn(() => Promise.resolve({ branch: null })),
+      getModels: vi.fn(() => Promise.resolve([])),
       onSessionEvent: vi.fn(() => noopUnsub),
       onRemoteSessionStatus: vi.fn(() => noopUnsub),
       onRemoteSessionUpdate: vi.fn(() => noopUnsub),
