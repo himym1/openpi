@@ -789,9 +789,19 @@ function handleSidecarMessage(msg: SidecarMessage): void {
       return
     }
 
-    case 'session_error':
+    case 'session_error': {
+      if (
+        msg.code === 'pi_sidecar_exited' ||
+        msg.code === 'pi_sidecar_unavailable' ||
+        msg.code === 'pi_sidecar_delivery_failed' ||
+        msg.code === 'pi_sidecar_session_missing'
+      ) {
+        deferredWorkspace = state?.cwd ?? deferredWorkspace
+        state = null
+      }
       emitSessionError(msg.message, msg.code)
       return
+    }
 
     case 'session_index_updated':
       void refreshSessionIndex()

@@ -183,10 +183,16 @@ export class PiSidecarHost {
         this._stderrBuf = ''
         if (this.stopping) return
         const exitMsg = `[sidecar] process exited with code ${code ?? 'null'}`
+        const sessionError = `Pi sidecar exited with code ${code ?? 'null'}`
         process.stderr.write(`[piSidecarHost] sidecar exited with code ${code}\n`)
         this.onMessage({
           type: 'output_append',
           line: { level: 'error', text: exitMsg, ts: Date.now() },
+        })
+        this.onMessage({
+          type: 'session_error',
+          code: 'pi_sidecar_exited',
+          message: sessionError,
         })
         if (this.restartCount < MAX_RESTARTS) {
           this.restartCount++
@@ -215,8 +221,27 @@ export class PiSidecarHost {
     this.child = child
   }
 
-  send(command: SidecarCommand): void {
-    if (this.child) sendToSidecar(this.child, command)
+  send(command: SidecarCommand): boolean {
+    if (!this.child) {
+      this.onMessage({
+        type: 'session_error',
+        code: 'pi_sidecar_unavailable',
+        message: 'Pi sidecar is not running; try again after it restarts.',
+      })
+      return false
+    }
+
+    try {
+      sendToSidecar(this.child, command)
+      return true
+    } catch (err) {
+      this.onMessage({
+        type: 'session_error',
+        code: 'pi_sidecar_delivery_failed',
+        message: err instanceof Error ? err.message : String(err),
+      })
+      return false
+    }
   }
 
   request<T extends SidecarMessage>(

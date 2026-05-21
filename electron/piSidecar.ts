@@ -521,21 +521,42 @@ async function handleCommand(cmd: SidecarCommand): Promise<void> {
     }
 
     case 'prompt': {
-      if (!state) return
+      if (!state) {
+        send({
+          type: 'session_error',
+          code: 'pi_sidecar_session_missing',
+          message: 'Pi sidecar has no active session; reopen the workspace or retry after restart.',
+        })
+        return
+      }
       const promptText = buildSidecarPromptText(cmd.text, cmd.contextPrefix)
       await state.session.prompt(promptText, { images: cmd.images })
       break
     }
 
     case 'steer': {
-      if (!state) return
+      if (!state) {
+        send({
+          type: 'session_error',
+          code: 'pi_sidecar_session_missing',
+          message: 'Pi sidecar has no active session; reopen the workspace or retry after restart.',
+        })
+        return
+      }
       const steerText = buildSidecarPromptText(cmd.text, cmd.contextPrefix)
       await state.session.steer(steerText, cmd.images)
       break
     }
 
     case 'follow_up': {
-      if (!state) return
+      if (!state) {
+        send({
+          type: 'session_error',
+          code: 'pi_sidecar_session_missing',
+          message: 'Pi sidecar has no active session; reopen the workspace or retry after restart.',
+        })
+        return
+      }
       const followUpText = buildSidecarPromptText(cmd.text, cmd.contextPrefix)
       await state.session.followUp(followUpText, cmd.images)
       break
