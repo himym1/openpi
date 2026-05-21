@@ -87,13 +87,18 @@ function MessageImages(props: { images?: Array<{ mimeType: string; data: string 
 }
 
 export const UserMessage: Component<UserMessageProps> = (props) => {
+  const isLongContext = createMemo(() => {
+    const text = props.message.text
+    return text.length > 500 || text.split('\n').length > 8
+  })
+
   return (
     <div class="message-row user-message-row">
-      <div class="user-msg-stack">
+      <div class={`user-msg-stack${isLongContext() ? ' is-long' : ''}`}>
         <div class="user-bubble">
           <MessageImages images={props.message.images} />
           <Show when={props.message.text}>
-            <MarkdownContent text={props.message.text} />
+            <MarkdownContent text={props.message.text} escapeRawHtml />
           </Show>
         </div>
         <MessageActions

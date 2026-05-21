@@ -2844,6 +2844,14 @@ body.panel-dragging {
   gap: 5px;
   max-width: 78%;
 }
+.user-msg-stack.is-long {
+  width: 100%;
+  max-width: 100%;
+  align-items: stretch;
+}
+.user-msg-stack.is-long .user-bubble {
+  width: 100%;
+}
 .user-bubble {
   border-radius: var(--r-lg);
   background: var(--surface-card);

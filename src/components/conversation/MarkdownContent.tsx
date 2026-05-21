@@ -15,7 +15,7 @@ import markedShiki from 'marked-shiki'
 import { type Component, createEffect, createSignal, onCleanup } from 'solid-js'
 import { activeShikiTheme, cachedCodeToHtml, ensureHighlighter, LANG_MAP } from '../../lib/shiki'
 
-type Props = { text: string; streaming?: boolean }
+type Props = { text: string; streaming?: boolean; escapeRawHtml?: boolean }
 
 function escapeHtml(value: string): string {
   return value
@@ -160,7 +160,7 @@ export const MarkdownContent: Component<Props> = (props) => {
   onCleanup(() => clearTimeout(renderTimer))
 
   createEffect(() => {
-    const text = props.text
+    const text = props.escapeRawHtml ? escapeHtml(props.text) : props.text
     const isStreaming = props.streaming
     let cancelled = false
 
