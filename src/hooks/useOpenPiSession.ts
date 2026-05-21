@@ -177,10 +177,18 @@ export function useOpenPiSession() {
     })
   }
 
+  let contextUsageVersion = 0
+
+  const invalidateContextUsage = () => {
+    contextUsageVersion++
+    setContextPercent(null)
+  }
+
   const refreshContextUsage = async () => {
+    const version = contextUsageVersion
     try {
       const stats = await window.openpi.getSessionStats()
-      setContextPercent(stats.contextUsagePercent)
+      if (version === contextUsageVersion) setContextPercent(stats.contextUsagePercent)
     } catch {
       /* non-fatal */
     }
@@ -206,6 +214,10 @@ export function useOpenPiSession() {
       const e = event as { timestamp?: number }
       currentTurnStartMs = e.timestamp ?? Date.now()
     }
+    if (event.type === 'compaction_start' || event.type === 'compaction_end') {
+      invalidateContextUsage()
+    }
+
     if (event.type === 'agent_end') {
       setIsStreaming(false)
       setQueueMode('prompt')
