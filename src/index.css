@@ -2621,16 +2621,19 @@ body.panel-dragging {
 .conversation-wrap {
   position: relative;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 .conversation-scroll {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overflow-x: hidden;
 }
 .scroll-to-bottom-btn {
   position: absolute;
@@ -2789,10 +2792,15 @@ body.panel-dragging {
 }
 .message-list {
   max-width: 860px;
+  min-width: 0;
   margin: 0 auto;
   padding: 36px 10px 64px 28px;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+}
+.message-list-item {
+  min-width: 0;
 }
 .message-row {
   display: flex;
@@ -3147,6 +3155,7 @@ body.panel-dragging {
 }
 
 .md-content {
+  min-width: 0;
   color: var(--ink);
   font-size: 15px;
   line-height: 1.68;
@@ -3228,6 +3237,7 @@ body.panel-dragging {
 }
 /* ── Code block wrapper (shiki output + header) ───────────────────────── */
 .code-block {
+  max-width: 100%;
   margin: 0.75em 0;
   border-radius: 8px;
   border: 1px solid var(--hairline);
@@ -3285,6 +3295,7 @@ body.panel-dragging {
    without needing !important. */
 .code-block > .shiki,
 .code-block > pre {
+  max-width: 100%;
   margin: 0;
   border: none;
   border-radius: 0;
